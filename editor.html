@@ -1,0 +1,619 @@
+﻿<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Goozy Level Editor - Advanced (Messages & Audio)</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1e1e1e;
+            color: #fff;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Barre latérale gauche (Outils) */
+        #toolbar {
+            width: 280px;
+            background: #252526;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            border-right: 1px solid #333;
+            overflow-y: auto;
+        }
+
+        h2 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            border-bottom: 1px solid #444;
+            padding-bottom: 5px;
+            color: #0098ff;
+        }
+
+        .tool-btn {
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            padding: 8px;
+            cursor: pointer;
+            text-align: left;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-radius: 4px;
+            transition: background 0.2s;
+            font-size: 13px;
+        }
+
+            .tool-btn:hover {
+                background: #444;
+            }
+
+            .tool-btn.active {
+                background: #007acc;
+                border-color: #0098ff;
+            }
+
+        .color-box {
+            width: 14px;
+            height: 14px;
+            border: 1px solid #000;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+
+        /* Configuration du niveau */
+        .settings-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-bottom: 10px;
+            font-size: 13px;
+            background: #2d2d30;
+            padding: 8px;
+            border-radius: 4px;
+        }
+
+            .settings-group label {
+                color: #ccc;
+            }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+        }
+
+        input[type="text"], input[type="number"], select {
+            background: #3c3c3c;
+            border: 1px solid #555;
+            color: white;
+            padding: 5px;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+
+        .export-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-top: auto;
+        }
+
+            .export-btn:hover {
+                background: #218838;
+            }
+
+        /* Zone de dessin (Canvas) */
+        #canvas-container {
+            flex-grow: 1;
+            background: #111;
+            position: relative;
+            overflow: auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        canvas {
+            background: #1e1e24;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            cursor: crosshair;
+        }
+
+        #brush-properties {
+            background: #1e1e1e;
+            padding: 10px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="toolbar">
+        <h2>Paramètres du Niveau</h2>
+        <div class="settings-group" style="background:transparent; padding:0;">
+            <label>Nom du niveau:</label>
+            <input type="text" id="levelName" value="Nouveau Niveau">
+            <label>Gravité:</label>
+            <input type="number" id="levelGravity" value="20.0" step="0.1">
+        </div>
+
+        <h2>Outils & Presets</h2>
+        <div id="tools-container" style="display: flex; flex-direction: column; gap: 5px;">
+        </div>
+
+        <div id="brush-properties">
+            <h2 style="color: #ff9900; margin-top:0;">Propriétés de l'Objet</h2>
+
+            <div id="uid-props" class="settings-group" style="display:none; border-left: 3px solid #0098ff;">
+                <label title="Identifiant unique pour recevoir des messages">UID (Optionnel) :</label>
+                <input type="text" id="propUid" placeholder="Ex: boss_music_01">
+            </div>
+
+            <div id="standard-props" class="settings-group">
+                <label>Friction (0 = Glisse, 1 = Accroche):</label>
+                <input type="number" id="propFriction" step="0.1">
+
+                <label>Rebond / Restitution (0 = Lourd, 1 = Balle):</label>
+                <input type="number" id="propRestitution" step="0.1">
+
+                <label>Matériau (Rendu Visuel):</label>
+                <select id="propMatType">
+                    <option value="Stretch">Stretch (Répétition)</option>
+                    <option value="Simple">Simple (Étirement/Unique)</option>
+                </select>
+
+                <label>Atlas Colonne X (0, 1, 2...):</label>
+                <input type="number" id="propAtlasX" step="1" min="0">
+
+                <label>Atlas Ligne Y (0, 1, 2...):</label>
+                <input type="number" id="propAtlasY" step="1" min="0">
+            </div>
+
+            <div id="zone-props" class="settings-group" style="display:none;">
+                <label>Largeur de la zone (px):</label>
+                <input type="number" id="propZoneW" step="50" min="50">
+
+                <label>Hauteur de la zone (px):</label>
+                <input type="number" id="propZoneH" step="50" min="50">
+            </div>
+
+            <div id="trigger-props" class="settings-group" style="display:none; border-left: 3px solid #ff3333;">
+                <label>Target UID (Cible à contacter):</label>
+                <input type="text" id="propTargetUid" placeholder="Ex: boss_music_01">
+                <label>Message à envoyer (Ex: play, stop):</label>
+                <input type="text" id="propMessage" value="play">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="propTriggerOnce" checked> Se déclenche 1 seule fois
+                </label>
+            </div>
+
+            <div id="audio-props" class="settings-group" style="display:none; border-left: 3px solid #ff00ff;">
+                <label>Midi Path:</label>
+                <input type="text" id="propMidiPath" value="assets/tracks/track.mid">
+                <label>SoundFont Path:</label>
+                <input type="text" id="propSfPath" value="assets/banks/DS_Square.sf2">
+                <label>Volume:</label>
+                <input type="number" id="propVolume" step="0.1" min="0" max="1" value="0.5">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="propPlayOnAwake" checked> Play on Awake (Dès le chargement)
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="propLoop" checked> Boucle (Loop)
+                </label>
+            </div>
+
+        </div>
+
+        <h2 style="margin-top: 15px;">Actions</h2>
+        <button class="tool-btn" data-tool="Eraser"><span class="color-box" style="background:#ff3333;"></span> Gomme</button>
+        <button class="tool-btn" onclick="clearLevel()">🗑️ Tout effacer</button>
+
+        <button class="export-btn" onclick="exportJSON()">💾 Exporter JSON</button>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="levelCanvas" width="3200" height="1200"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('levelCanvas');
+        const ctx = canvas.getContext('2d');
+        const TILE_SIZE = 50;
+
+        // ==========================================
+        // DÉFINITION DES OUTILS ET PRESETS
+        // ==========================================
+        const tools = {
+            'Player': { label: 'Joueur', color: '#fff', draw: 'player', isUnique: true, hideProps: true },
+            'Coin': { label: 'Pièce', color: '#ffcc00', draw: 'circle', hideProps: true, props: { atlasX: 0, atlasY: 2 } },
+
+            // NOUVEAUX OUTILS : Événements
+            'AudioSource': { label: 'Source Audio', color: '#ff00ff', draw: 'audio', hasUid: true, isAudio: true, props: { uid: '', midiPath: 'assets/tracks/track.mid', sfPath: 'assets/banks/DS_Square.sf2', playOnAwake: true, volume: 0.5, loop: true } },
+            'Trigger': { label: 'Trigger Event', color: 'rgba(255, 50, 50, 0.3)', draw: 'zone', isZone: true, isTrigger: true, hasUid: true, props: { zoneW: 100, zoneH: 100, uid: '', targetUid: '', message: 'play', triggerOnce: true } },
+
+            'CamZone': { label: 'Zone Caméra', color: 'rgba(255, 255, 0, 0.3)', draw: 'zone', isZone: true, props: { zoneW: 800, zoneH: 600 } },
+
+            'Wall': { label: 'Mur Standard', color: '#888', draw: 'rect', props: { friction: 0.1, restitution: 0.0, matType: 'Stretch', atlasX: 1, atlasY: 0, shape: 'Rectangle' } },
+            'Ice': { label: 'Mur Glace', color: '#99e6ff', draw: 'rect', props: { friction: 0.0, restitution: 0.0, matType: 'Stretch', atlasX: 0, atlasY: 1, shape: 'Rectangle' } },
+            'Bouncy': { label: 'Trampoline', color: '#ff66b2', draw: 'rect', props: { friction: 0.1, restitution: 1.2, matType: 'Stretch', atlasX: 5, atlasY: 0, shape: 'Rectangle' } },
+
+            'SlopeRight': { label: 'Pente Droite (/|)', color: '#666', draw: 'slopeRight', props: { friction: 0.1, restitution: 0.0, matType: 'Simple', atlasX: 2, atlasY: 0, shape: 'SlopeRight' } },
+            'SlopeLeft': { label: 'Pente Gauche (|\\)', color: '#666', draw: 'slopeLeft', props: { friction: 0.1, restitution: 0.0, matType: 'Simple', atlasX: 3, atlasY: 0, shape: 'SlopeLeft' } },
+
+            'IceSlopeRight': { label: 'Pente Glace Droite (/|)', color: '#66ccff', draw: 'slopeRight', props: { friction: 0.0, restitution: 0.0, matType: 'Simple', atlasX: 2, atlasY: 1, shape: 'SlopeRight' } },
+            'IceSlopeLeft': { label: 'Pente Glace Gauche (|\\)', color: '#66ccff', draw: 'slopeLeft', props: { friction: 0.0, restitution: 0.0, matType: 'Simple', atlasX: 3, atlasY: 1, shape: 'SlopeLeft' } },
+        };
+
+        let currentTool = 'Wall';
+        let isDrawing = false;
+        let objects = [];
+
+        // Initialisation de l'UI
+        const toolsContainer = document.getElementById('tools-container');
+        for (let key in tools) {
+            let t = tools[key];
+            let btn = document.createElement('button');
+            btn.className = `tool-btn ${key === currentTool ? 'active' : ''}`;
+            btn.dataset.tool = key;
+            btn.innerHTML = `<span class="color-box" style="background:${t.color};"></span> ${t.label}`;
+            toolsContainer.appendChild(btn);
+        }
+
+        // Gérer le clic sur les boutons d'outils
+        document.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentTool = btn.dataset.tool;
+                updateBrushPropertiesUI();
+            });
+        });
+
+        // Met à jour le panneau de propriétés en fonction de l'outil sélectionné
+        function updateBrushPropertiesUI() {
+            const propsPanel = document.getElementById('brush-properties');
+
+            // Masquer tout par défaut
+            ['uid-props', 'standard-props', 'zone-props', 'trigger-props', 'audio-props'].forEach(id => {
+                document.getElementById(id).style.display = 'none';
+            });
+
+            if (currentTool === 'Eraser' || tools[currentTool].hideProps) {
+                propsPanel.style.display = 'none';
+                return;
+            }
+
+            propsPanel.style.display = 'block';
+            const defProps = tools[currentTool].props;
+
+            // Afficher le champ UID si supporté
+            if (tools[currentTool].hasUid || tools[currentTool].isAudio || tools[currentTool].isTrigger) {
+                document.getElementById('uid-props').style.display = 'flex';
+                document.getElementById('propUid').value = defProps.uid || '';
+            }
+
+            // Gestion de l'affichage selon le type d'outil
+            if (tools[currentTool].isAudio) {
+                document.getElementById('audio-props').style.display = 'flex';
+                document.getElementById('propMidiPath').value = defProps.midiPath;
+                document.getElementById('propSfPath').value = defProps.sfPath;
+                document.getElementById('propVolume').value = defProps.volume;
+                document.getElementById('propPlayOnAwake').checked = defProps.playOnAwake;
+                document.getElementById('propLoop').checked = defProps.loop;
+            }
+            else if (tools[currentTool].isTrigger) {
+                document.getElementById('zone-props').style.display = 'flex';
+                document.getElementById('trigger-props').style.display = 'flex';
+                document.getElementById('propZoneW').value = defProps.zoneW;
+                document.getElementById('propZoneH').value = defProps.zoneH;
+                document.getElementById('propTargetUid').value = defProps.targetUid;
+                document.getElementById('propMessage').value = defProps.message;
+                document.getElementById('propTriggerOnce').checked = defProps.triggerOnce;
+            }
+            else if (tools[currentTool].isZone) {
+                document.getElementById('zone-props').style.display = 'flex';
+                document.getElementById('propZoneW').value = defProps.zoneW;
+                document.getElementById('propZoneH').value = defProps.zoneH;
+            }
+            else {
+                document.getElementById('standard-props').style.display = 'flex';
+                document.getElementById('propFriction').value = defProps.friction;
+                document.getElementById('propRestitution').value = defProps.restitution;
+                document.getElementById('propMatType').value = defProps.matType;
+                document.getElementById('propAtlasX').value = defProps.atlasX;
+                document.getElementById('propAtlasY').value = defProps.atlasY;
+            }
+        }
+
+        // Récupère les propriétés actuelles de l'UI pour le bloc à peindre
+        function getCurrentBrushProps() {
+            if (currentTool === 'Eraser' || tools[currentTool].hideProps) return {};
+
+            let props = {};
+            if (document.getElementById('uid-props').style.display !== 'none') {
+                props.uid = document.getElementById('propUid').value;
+            }
+
+            if (tools[currentTool].isAudio) {
+                props.midiPath = document.getElementById('propMidiPath').value;
+                props.sfPath = document.getElementById('propSfPath').value;
+                props.volume = parseFloat(document.getElementById('propVolume').value) || 0.5;
+                props.playOnAwake = document.getElementById('propPlayOnAwake').checked;
+                props.loop = document.getElementById('propLoop').checked;
+            }
+            else if (tools[currentTool].isTrigger) {
+                props.zoneW = parseInt(document.getElementById('propZoneW').value) || 100;
+                props.zoneH = parseInt(document.getElementById('propZoneH').value) || 100;
+                props.targetUid = document.getElementById('propTargetUid').value;
+                props.message = document.getElementById('propMessage').value;
+                props.triggerOnce = document.getElementById('propTriggerOnce').checked;
+            }
+            else if (tools[currentTool].isZone) {
+                props.zoneW = parseInt(document.getElementById('propZoneW').value) || 800;
+                props.zoneH = parseInt(document.getElementById('propZoneH').value) || 600;
+            }
+            else {
+                props.shape = tools[currentTool].props.shape;
+                props.friction = parseFloat(document.getElementById('propFriction').value) || 0;
+                props.restitution = parseFloat(document.getElementById('propRestitution').value) || 0;
+                props.matType = document.getElementById('propMatType').value;
+                props.atlasX = parseInt(document.getElementById('propAtlasX').value) || 0;
+                props.atlasY = parseInt(document.getElementById('propAtlasY').value) || 0;
+            }
+
+            return props;
+        }
+
+        // ==========================================
+        // DESSIN DU CANVAS
+        // ==========================================
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Grille
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+            for (let x = 0; x <= canvas.width; x += TILE_SIZE) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
+            for (let y = 0; y <= canvas.height; y += TILE_SIZE) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
+
+            // Objets
+            objects.forEach(obj => {
+                let x = obj.x * TILE_SIZE;
+                let y = obj.y * TILE_SIZE;
+                let def = tools[obj.type];
+                if (!def) return;
+
+                ctx.fillStyle = def.color;
+
+                if (def.draw === 'rect') { ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE); }
+                else if (def.draw === 'circle') { ctx.beginPath(); ctx.arc(x + 25, y + 25, 15, 0, Math.PI * 2); ctx.fill(); }
+                else if (def.draw === 'player') { ctx.fillRect(x + 10, y + 10, 30, 30); ctx.fillStyle = '#000'; ctx.fillText("P1", x + 15, y + 30); }
+                else if (def.draw === 'slopeRight') { ctx.beginPath(); ctx.moveTo(x, y + TILE_SIZE); ctx.lineTo(x + TILE_SIZE, y + TILE_SIZE); ctx.lineTo(x + TILE_SIZE, y); ctx.fill(); }
+                else if (def.draw === 'slopeLeft') { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + TILE_SIZE); ctx.lineTo(x + TILE_SIZE, y + TILE_SIZE); ctx.fill(); }
+
+                // DESSIN AUDIO
+                else if (def.draw === 'audio') {
+                    ctx.fillRect(x + 10, y + 10, 30, 30);
+                    ctx.fillStyle = '#fff';
+                    ctx.font = "16px Arial";
+                    ctx.fillText("🎵", x + 15, y + 32);
+                    if (obj.props.uid) {
+                        ctx.fillStyle = '#ff00ff';
+                        ctx.font = "10px Arial";
+                        ctx.fillText(obj.props.uid, x, y + 50);
+                    }
+                }
+
+                // DESSIN ZONES (Caméra & Trigger)
+                else if (def.draw === 'zone') {
+                    ctx.fillRect(x, y, obj.props.zoneW, obj.props.zoneH);
+
+                    let strokeColor = obj.type === 'Trigger' ? '#ff3333' : '#ffff00';
+                    ctx.strokeStyle = strokeColor;
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x, y, obj.props.zoneW, obj.props.zoneH);
+
+                    ctx.fillStyle = '#fff';
+                    ctx.font = "14px Arial";
+                    let text = obj.type === 'Trigger' ? "⚡ TRIGGER" : "📷 CAM ZONE";
+                    ctx.fillText(`${text} (${obj.props.zoneW}x${obj.props.zoneH})`, x + 5, y + 20);
+
+                    if (obj.type === 'Trigger') {
+                        ctx.font = "12px Arial";
+                        ctx.fillStyle = '#ff9999';
+                        ctx.fillText(`-> ${obj.props.targetUid || 'Aucun'} [${obj.props.message}]`, x + 5, y + 35);
+                    }
+                }
+            });
+        }
+
+        function placeObject(gridX, gridY) {
+            objects = objects.filter(o => o.x !== gridX || o.y !== gridY);
+
+            if (currentTool !== 'Eraser') {
+                if (tools[currentTool].isUnique) objects = objects.filter(o => o.type !== currentTool);
+
+                objects.push({
+                    type: currentTool,
+                    x: gridX,
+                    y: gridY,
+                    props: getCurrentBrushProps()
+                });
+            }
+            draw();
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            isDrawing = true;
+            let rect = canvas.getBoundingClientRect();
+            placeObject(Math.floor((e.clientX - rect.left) / TILE_SIZE), Math.floor((e.clientY - rect.top) / TILE_SIZE));
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+            let rect = canvas.getBoundingClientRect();
+            placeObject(Math.floor((e.clientX - rect.left) / TILE_SIZE), Math.floor((e.clientY - rect.top) / TILE_SIZE));
+        });
+
+        canvas.addEventListener('mouseup', () => isDrawing = false);
+        canvas.addEventListener('mouseleave', () => isDrawing = false);
+
+        function clearLevel() { if (confirm("Tout effacer ?")) { objects = []; draw(); } }
+
+        // ==========================================
+        // EXPORT JSON INTELLIGENT
+        // ==========================================
+        function exportJSON() {
+            let scene = {
+                Name: document.getElementById('levelName').value,
+                Gravity: parseFloat(document.getElementById('levelGravity').value),
+                GameObjects: []
+            };
+
+            let sortedObjects = [...objects].sort((a, b) => {
+                if (a.y === b.y) return a.x - b.x;
+                return a.y - b.y;
+            });
+
+            // Fusion horizontale pour les murs
+            let mergedObjects = [];
+            let skipIndex = new Set();
+
+            for (let i = 0; i < sortedObjects.length; i++) {
+                if (skipIndex.has(i)) continue;
+
+                let current = sortedObjects[i];
+                let width = 1;
+
+                if (['Wall', 'Ice', 'Bouncy'].includes(current.type)) {
+                    for (let j = i + 1; j < sortedObjects.length; j++) {
+                        let next = sortedObjects[j];
+                        if (next.y === current.y && next.x === current.x + width && next.type === current.type && JSON.stringify(next.props) === JSON.stringify(current.props)) {
+                            width++;
+                            skipIndex.add(j);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                mergedObjects.push({ ...current, widthInTiles: width });
+            }
+
+            let objCounter = 0;
+            mergedObjects.forEach(obj => {
+                let realX = obj.x * TILE_SIZE;
+                let realY = obj.y * TILE_SIZE;
+                let realW = obj.widthInTiles * TILE_SIZE || TILE_SIZE;
+                let realH = TILE_SIZE;
+                objCounter++;
+
+                let gameObject = {
+                    Name: obj.type + "_" + objCounter,
+                    Transform: { X: realX, Y: realY, W: realW, H: realH },
+                    Components: []
+                };
+
+                // Ajout de l'UID si l'objet en a un
+                if (obj.props.uid && obj.props.uid.trim() !== "") {
+                    gameObject.Uid = obj.props.uid.trim();
+                }
+
+                if (obj.type === 'Player') {
+                    gameObject.Name = "Player";
+                    gameObject.Components.push({ "Type": "COG_PlayerController", "Speed": 8.0, "JumpImpulse": 15.0 });
+                    gameObject.Components.push({ "Type": "COG_Collider", "IsSolid": true, "Friction": 0.0, "BodyType": "Dynamic", "Shape": "PlayerBox" });
+                    gameObject.Components.push({ "Type": "COG_RopeClimber" });
+                    gameObject.Components.push({ "Type": "COG_Sprite", "TexturePath": "atlas.png", "LayerDepth": 0.5, "AtlasOffset": [0.5, 0.0], "AtlasSize": [0.125, 0.125] });
+                }
+                else if (obj.type === 'Coin') {
+                    gameObject.Components.push({ "Type": "COG_Collider", "IsSolid": false, "IsTrigger": true, "BodyType": "Static" });
+                    gameObject.Components.push({ "Type": "COG_CoinBehavior" });
+                    let pX = (tools['Coin'].props.atlasX * 0.125);
+                    let pY = (tools['Coin'].props.atlasY * 0.125);
+                    gameObject.Components.push({ "Type": "COG_Sprite", "TexturePath": "atlas.png", "LayerDepth": 0.4, "AtlasOffset": [pX, pY], "AtlasSize": [0.125, 0.125] });
+                }
+                // --- EXPORT AUDIO ---
+                else if (obj.type === 'AudioSource') {
+                    gameObject.Components.push({
+                        "Type": "COG_AudioSource",
+                        "MidiPath": obj.props.midiPath,
+                        "SoundFontPath": obj.props.sfPath,
+                        "Volume": obj.props.volume,
+                        "PlayOnAwake": obj.props.playOnAwake,
+                        "Loop": obj.props.loop
+                    });
+                }
+                // --- EXPORT TRIGGER ---
+                else if (obj.type === 'Trigger') {
+                    gameObject.Transform.W = obj.props.zoneW;
+                    gameObject.Transform.H = obj.props.zoneH;
+                    gameObject.Components.push({ "Type": "COG_Collider", "IsSolid": false, "IsTrigger": true, "BodyType": "Static" });
+                    gameObject.Components.push({
+                        "Type": "COG_TriggerBehavior",
+                        "TargetUid": obj.props.targetUid,
+                        "MessageToSend": obj.props.message,
+                        "TriggerOnce": obj.props.triggerOnce
+                    });
+                    gameObject.Components.push({ "Type": "COG_Sprite", "IsVisible": false, "LayerDepth": 0.2, "Color": [1.0, 0.0, 0.0, 1.0] });
+                }
+                // --- EXPORT CAM ZONE ---
+                else if (obj.type === 'CamZone') {
+                    gameObject.Transform.W = obj.props.zoneW;
+                    gameObject.Transform.H = obj.props.zoneH;
+                    gameObject.Components.push({ "Type": "COG_Collider", "IsSolid": false, "IsTrigger": true, "BodyType": "Static" });
+                    gameObject.Components.push({ "Type": "COG_CameraZone" });
+                    gameObject.Components.push({ "Type": "COG_Sprite", "IsVisible": false, "LayerDepth": 0.2, "Color": [1.0, 1.0, 0.0, 1.0] });
+                }
+                // --- EXPORT MURS ET PENTES ---
+                else {
+                    let p = obj.props;
+                    gameObject.Components.push({
+                        "Type": "COG_Collider",
+                        "IsSolid": true,
+                        "Friction": p.friction,
+                        "Restitution": p.restitution,
+                        "BodyType": "Static",
+                        "Shape": p.shape
+                    });
+
+                    gameObject.Components.push({
+                        "Type": "COG_Sprite",
+                        "TexturePath": "atlas.png",
+                        "LayerDepth": 0.6,
+                        "MatType": p.matType,
+                        "TextureBaseSize": 50.0,
+                        "AtlasOffset": [p.atlasX * 0.125, p.atlasY * 0.125],
+                        "AtlasSize": [0.125, 0.125]
+                    });
+                }
+
+                scene.GameObjects.push(gameObject);
+            });
+
+            let dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(scene, null, 2));
+            let downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", document.getElementById('levelName').value + ".json");
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        }
+
+        // Init
+        updateBrushPropertiesUI();
+        draw();
+    </script>
+</body>
+</html>
