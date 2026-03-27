@@ -1136,7 +1136,7 @@ public class COG_AudioSource : Component
         {
             uint bufferId = 0;
             AudioManager.AL.SourceUnqueueBuffers(_sourceId, 1, &bufferId);
-            FillBuffer(bufferId);
+            //FillBuffer(bufferId);
             AudioManager.AL.SourceQueueBuffers(_sourceId, 1, &bufferId);
             processed--;
         }
