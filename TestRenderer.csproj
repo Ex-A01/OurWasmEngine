@@ -1,30 +1,58 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net9.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-  </PropertyGroup>
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net9.0</TargetFramework>
+		<RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
-  <ItemGroup>
-    <Compile Remove="Camera2D.cs" />
-  </ItemGroup>
+		<WasmMainJSPath>main.js</WasmMainJSPath>
+		<RunAOTCompilation>true</RunAOTCompilation>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Aether.Physics2D" Version="2.2.0" />
-    <PackageReference Include="MeltySynth" Version="2.4.1" />
-    <PackageReference Include="RawInput.Sharp" Version="0.1.3" />
-    <PackageReference Include="Silk.NET" Version="2.23.0" />
-    <PackageReference Include="Silk.NET.Core" Version="2.23.0" />
-    <PackageReference Include="Silk.NET.Input" Version="2.23.0" />
-    <PackageReference Include="Silk.NET.Input.Common" Version="2.23.0" />
-    <PackageReference Include="Silk.NET.Maths" Version="2.23.0" />
-    <PackageReference Include="Silk.NET.OpenGL" Version="2.23.0" />
-    <PackageReference Include="Silk.NET.Windowing" Version="2.23.0" />
-    <PackageReference Include="Silk.NET.Windowing.Common" Version="2.23.0" />
-    <PackageReference Include="StbImageSharp" Version="2.30.15" />
-  </ItemGroup>
+	<ItemGroup>
+		<Compile Remove="Camera2D.cs" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Aether.Physics2D" Version="2.2.0" />
+		<PackageReference Include="MeltySynth" Version="2.4.1" />
+
+		<PackageReference Include="Silk.NET" Version="2.23.0" />
+		<PackageReference Include="Silk.NET.Core" Version="2.23.0" />
+		<PackageReference Include="Silk.NET.Input" Version="2.23.0" />
+		<PackageReference Include="Silk.NET.Input.Common" Version="2.23.0" />
+		<PackageReference Include="Silk.NET.Input.Sdl" Version="2.23.0" />
+		<PackageReference Include="Silk.NET.Maths" Version="2.23.0" />
+		<PackageReference Include="Silk.NET.OpenGL" Version="2.23.0" />
+		<PackageReference Include="Silk.NET.Windowing" Version="2.23.0" />
+		<PackageReference Include="Silk.NET.Windowing.Common" Version="2.23.0" />
+		<PackageReference Include="Silk.NET.Windowing.Sdl" Version="2.23.0" />
+		<PackageReference Include="StbImageSharp" Version="2.30.15" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<WasmFilesToInclude Include="assets\**\*" />
+		<WasmFilesToInclude Include="index.html" />
+	</ItemGroup>
+
+	<PropertyGroup>
+		<WasmBuildNative>true</WasmBuildNative>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<EmscriptenCompileOption Include="-s" />
+		<EmscriptenCompileOption Include="USE_SDL=2" />
+		<EmscriptenCompileOption Include="-s" />
+		<EmscriptenCompileOption Include="MIN_WEBGL_VERSION=2" />
+
+		<EmscriptenLinkOption Include="-s" />
+		<EmscriptenLinkOption Include="USE_SDL=2" />
+		<EmscriptenLinkOption Include="-s" />
+		<EmscriptenLinkOption Include="MIN_WEBGL_VERSION=2" />
+	</ItemGroup>
+
 
 </Project>

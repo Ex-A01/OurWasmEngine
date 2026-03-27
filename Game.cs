@@ -1,6 +1,4 @@
-﻿using Linearstar.Windows.RawInput;
-using Linearstar.Windows.RawInput.Native;
-using MeltySynth;
+﻿using MeltySynth;
 using nkast.Aether.Physics2D;
 using nkast.Aether.Physics2D.Collision.Shapes;
 using nkast.Aether.Physics2D.Dynamics;
@@ -13,59 +11,34 @@ using Silk.NET.Windowing;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using System.Runtime.InteropServices;
 
 public class MyGame : IDisposable
 {
-    private IWindow _window;
+    private IView _window;
     private GL _gl;
     private IInputContext _input;
     private Matrix4X4<float> _projection;
     private Shader _shader;
 
     public static World PhysicsWorld { get; private set; }
-
-    private SpriteBatch _spriteBatch; // NOUVEAU
-
+    private SpriteBatch _spriteBatch;
     private float _totalTime = 0f;
-    //private Camera2D _camera;
-    //public static Camera2D MainCamera { get; private set; }
 
-    // --- P/INVOKE POUR INTERCEPTER WINDOWS ---
-    private delegate IntPtr WndProcDelegate(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
-
-    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr")]
-    private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, WndProcDelegate dwNewLong);
-
-    [DllImport("user32.dll", EntryPoint = "SetWindowLong")]
-    private static extern IntPtr SetWindowLong(IntPtr hWnd, int nIndex, WndProcDelegate dwNewLong);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr CallWindowProc(IntPtr lpPrevWndFunc, IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
-
-    private const int GWLP_WNDPROC = -4;
-    private const uint WM_INPUT = 0x00FF;
-
-    // On doit garder une référence au delegate pour éviter que le Garbage Collector le supprime
-    private WndProcDelegate _wndProcDelegate;
-    private IntPtr _prevWndProc;
-    // -----------------------------------------
-
-    // Nouveau curseur adapté au Raw Input
+    // Nouveau curseur adapté au Web (Silk.NET standard)
     public class VirtualCursor
     {
-        public RawInputDeviceHandle DeviceHandle;
+        public int DeviceId; // Remplacement du RawInputDeviceHandle
         public Vector2 Position;
         public Vector4 Color;
 
-        // NOUVEAU : État des boutons
+        // État des boutons
         public bool LeftDown;
         public bool RightDown;
         public bool MiddleDown;
 
-        public VirtualCursor(RawInputDeviceHandle handle, Vector2 startPos, Vector4 color)
+        public VirtualCursor(int id, Vector2 startPos, Vector4 color)
         {
-            DeviceHandle = handle;
+            DeviceId = id;
             Position = startPos;
             Color = color;
         }
@@ -76,11 +49,18 @@ public class MyGame : IDisposable
 
     public MyGame()
     {
-        var options = WindowOptions.Default;
-        options.Size = new Vector2D<int>((int)GameConfig.WindowWidth, (int)GameConfig.WindowHeight);
-        options.Title = "Goozy (GOC Engine) - MULTI-MOUSE";
+        // On utilise ViewOptions au lieu de WindowOptions
+        var options = ViewOptions.Default;
 
-        _window = Window.Create(options);
+        // On cible spécifiquement OpenGL ES 3.0 (WebGL 2.0)
+        options.API = new GraphicsAPI(ContextAPI.OpenGLES, ContextProfile.Core, ContextFlags.Default, new APIVersion(3, 0));
+
+        // Note : Une "Vue" sur le Web n'a pas de titre ni de taille explicite en C#.
+        // Sa taille est définie par le style CSS du <canvas> dans ton index.html !
+
+        // On utilise GetView au lieu de Create !
+        _window = Window.GetView(options);
+
         _window.Load += OnLoad;
         _window.Update += OnUpdate;
         _window.Render += OnRender;
@@ -107,31 +87,27 @@ public class MyGame : IDisposable
         {
             keyboard.KeyDown += (k, key, _) =>
             {
+                // Note : Application.Exit() n'a pas vraiment de sens en Wasm, mais Window.Close() arrêtera la boucle.
                 if (key == Key.Escape) _window.Close();
                 if (key == Key.F3) GameConfig.DebugMode = !GameConfig.DebugMode;
             };
         }
 
-        if (_input.Mice.Count > 0)
+        // --- SETUP SOURIS POUR LE WEB ---
+        // On initialise un curseur virtuel pour chaque souris détectée par le navigateur (généralement 1 seule)
+        for (int i = 0; i < _input.Mice.Count; i++)
         {
-            _input.Mice[0].Cursor.CursorMode = CursorMode.Disabled;
+            _input.Mice[i].Cursor.CursorMode = CursorMode.Disabled; // Optionnel : cache le curseur de l'OS
+            Vector4 color = _cursorColors[Cursors.Count % _cursorColors.Length];
+            Cursors.Add(new VirtualCursor(i, new Vector2(GameConfig.WindowWidth / 2f, GameConfig.WindowHeight / 2f), color));
+            Console.WriteLine($"[SOURIS INIT] Id: {i}");
         }
 
-        // --- SETUP RAW INPUT & WINDOW SUBCLASSING ---
-        nint hwnd = _window.Native.Win32.Value.Hwnd;
-        RawInputDevice.RegisterDevice(HidUsageAndPage.Mouse, RawInputDeviceFlags.InputSink, hwnd);
-        _wndProcDelegate = WndProc;
-        if (IntPtr.Size == 8) _prevWndProc = SetWindowLongPtr(hwnd, GWLP_WNDPROC, _wndProcDelegate);
-        else _prevWndProc = SetWindowLong(hwnd, GWLP_WNDPROC, _wndProcDelegate);
-        // ---------------------------------------------
+        _shader = new Shader(_gl, "assets/base.vert", "assets/base.frag");
 
-        _shader = new Shader(_gl, "base.vert", "base.frag");
-
-        // --- MAGIE DU DATA-DRIVEN : ON CHARGE LE NIVEAU DEPUIS LE FICHIER ---
         try
         {
-            // Le SceneLoader s'occupe de créer la scène, de l'assigner au SceneManager, et de populer les objets !
-            SceneLoader.LoadSceneFromJson("paff.json", _input.Keyboards[0], _input.Mice[0]);
+            SceneLoader.LoadSceneFromJson("assets/Paff.json", _input.Keyboards[0], _input.Mice[0]);
             Console.WriteLine($"[SCENE LOADED] {SceneManager.CurrentScene.Name} chargée avec succès !");
         }
         catch (Exception ex)
@@ -140,72 +116,30 @@ public class MyGame : IDisposable
         }
     }
 
-    // --- LA MAGIE EST ICI : Interception des messages Windows ---
-    private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
-    {
-        if (msg == WM_INPUT)
-        {
-            var data = RawInputData.FromHandle(lParam);
-            if (data is RawInputMouseData mouseData)
-            {
-                var handle = mouseData.Header.DeviceHandle;
-                var cursor = Cursors.Find(c => c.DeviceHandle == handle);
-
-                // --- FIX : Recréer le curseur s'il n'existe pas encore ---
-                if (cursor == null)
-                {
-                    Vector4 color = _cursorColors[Cursors.Count % _cursorColors.Length];
-                    cursor = new VirtualCursor(handle, new Vector2(GameConfig.WindowWidth / 2f, GameConfig.WindowHeight / 2f), color);
-                    Cursors.Add(cursor);
-                    Console.WriteLine($"[NOUVELLE SOURIS] Handle: {handle} - Couleur: {color}");
-                }
-                // ---------------------------------------------------------
-
-                // Mouvement (Relatif)
-                cursor.Position.X = Math.Clamp(cursor.Position.X + mouseData.Mouse.LastX, 0, GameConfig.WindowWidth);
-                cursor.Position.Y = Math.Clamp(cursor.Position.Y + mouseData.Mouse.LastY, 0, GameConfig.WindowHeight);
-
-                // État des Boutons
-                var flags = mouseData.Mouse.Buttons; // Utilise ButtonFlags au lieu de Flags
-
-                if (flags.HasFlag(RawMouseButtonFlags.LeftButtonDown)) cursor.LeftDown = true;
-                if (flags.HasFlag(RawMouseButtonFlags.LeftButtonUp)) cursor.LeftDown = false;
-
-                if (flags.HasFlag(RawMouseButtonFlags.RightButtonDown)) cursor.RightDown = true;
-                if (flags.HasFlag(RawMouseButtonFlags.RightButtonUp)) cursor.RightDown = false;
-
-                if (flags.HasFlag(RawMouseButtonFlags.MiddleButtonDown)) cursor.MiddleDown = true;
-                if (flags.HasFlag(RawMouseButtonFlags.MiddleButtonUp)) cursor.MiddleDown = false;
-            }
-        }
-
-        return CallWindowProc(_prevWndProc, hWnd, msg, wParam, lParam);
-    }
-    // -------------------------------------------------------------
-
     private void OnUpdate(double deltaTime)
     {
         float dt = Math.Min((float)deltaTime, 0.05f);
         _totalTime += dt;
 
-        // La Scène s'occupe de la physique, des updates d'objets, et de la caméra !
+        // --- MISE À JOUR DES CURSEURS ---
+        // Au lieu d'écouter des événements Windows, on sonde (polling) l'état de Silk.NET
+        for (int i = 0; i < _input.Mice.Count && i < Cursors.Count; i++)
+        {
+            var mouse = _input.Mice[i];
+            var cursor = Cursors[i];
+
+            cursor.Position = mouse.Position;
+
+            // On s'assure que le curseur ne sort pas de l'écran logique
+            cursor.Position.X = Math.Clamp(cursor.Position.X, 0, GameConfig.WindowWidth);
+            cursor.Position.Y = Math.Clamp(cursor.Position.Y, 0, GameConfig.WindowHeight);
+
+            cursor.LeftDown = mouse.IsButtonPressed(MouseButton.Left);
+            cursor.RightDown = mouse.IsButtonPressed(MouseButton.Right);
+            cursor.MiddleDown = mouse.IsButtonPressed(MouseButton.Middle);
+        }
+
         SceneManager.CurrentScene?.Update(dt);
-    }
-
-    private void DrawDebugLine(SpriteBatch spriteBatch, Vector3 start, Vector2 end, Vector4 color)
-    {
-        Vector2 start2D = new Vector2(start.X, start.Y);
-        Vector2 direction = end - start2D;
-        float length = direction.Length();
-        float angle = MathF.Atan2(direction.Y, direction.X);
-        Vector2 midPoint = (start2D + end) / 2f;
-
-        float thickness = 2f;
-
-        Texture pixelTex = AssetManager.GetTexture("pixel.png");
-
-        // NOUVEAU : On ajoute l'origine (pour bien centrer la ligne sur le midPoint) et le depth à 1.0f !
-        spriteBatch.Draw(pixelTex, midPoint, new Vector2(length, thickness), color, angle, new Vector2(length / 2f, thickness / 2f), null, null, 1.0f);
     }
 
     private void OnRender(double deltaTime)
@@ -214,17 +148,15 @@ public class MyGame : IDisposable
 
         if (SceneManager.CurrentScene != null)
         {
-            // 1. Rendu du monde
             _spriteBatch.Begin(_shader, _projection, SceneManager.CurrentScene.Camera.GetViewMatrix().ToGeneric());
             SceneManager.CurrentScene.Draw(_spriteBatch, _totalTime);
             _spriteBatch.End();
         }
 
-        // 2. Interface Utilisateur (Curseurs)
         var identity = Matrix4X4<float>.Identity;
         _spriteBatch.Begin(_shader, _projection, identity);
 
-        Texture atlasTex = AssetManager.GetTexture("atlas.png");
+        Texture atlasTex = AssetManager.GetTexture("assets/atlas.png");
         float tileSizeInAtlas = 0.125f;
         Vector2 cursorUVOffset = new Vector2(5 * tileSizeInAtlas, 0f);
         Vector2 cursorUVSize = new Vector2(tileSizeInAtlas, tileSizeInAtlas);
@@ -238,14 +170,8 @@ public class MyGame : IDisposable
 
     public void Dispose()
     {
-        nint hwnd = _window.Native.Win32.Value.Hwnd;
-        if (IntPtr.Size == 8)
-            SetWindowLongPtr(hwnd, GWLP_WNDPROC, _wndProcDelegate);
-        else
-            SetWindowLong(hwnd, GWLP_WNDPROC, _wndProcDelegate);
-
         _spriteBatch.Dispose();
-        AssetManager.DisposeAll(); // Propre !
+        AssetManager.DisposeAll();
         AudioManager.Dispose();
         _shader.Dispose();
         _gl.Dispose();
@@ -263,14 +189,9 @@ public static class GameConfig
     public const float WindowHeight = 600f;
     public static bool DebugMode = true;
 
-    // --- NOUVELLES CONSTANTES PHYSIQUES ---
     public const float PixelsPerMeter = 50f;
     public const float MetersPerPixel = 1f / PixelsPerMeter;
-
-    // Une gravité physique réaliste est de 9.81f. 
-    // Pour un jeu, on l'augmente souvent un peu (ex: 20f) pour plus de dynamisme.
     public const float PhysicsGravity = 20f;
-    // --------------------------------------
 
     public const float BaseTileSize = 50f;
     public const float HalfTile = BaseTileSize / 2f;
@@ -317,7 +238,6 @@ public class Camera2D
 
     public Matrix4x4 GetViewMatrix()
     {
-        // On arrondit la position pour s'aligner parfaitement sur la grille des pixels (Pixel-Perfect)
         var translation = Matrix4x4.CreateTranslation(MathF.Round(-Position.X), MathF.Round(-Position.Y), 0f);
         var rotation = Matrix4x4.CreateRotationZ(Rotation);
         var scale = Matrix4x4.CreateScale(Zoom, Zoom, 1f);
@@ -358,7 +278,7 @@ public class Camera2D
 public enum ColliderShape
 {
     Rectangle,
-    SlopeRight, // Pente qui monte vers la droite : /|
+    SlopeRight,
     SlopeLeft,
     PlayerBox
 }
@@ -380,13 +300,11 @@ public abstract class Component
 
     public virtual void Awake() { }
     public virtual void Update(float deltaTime) { }
-    // NOUVEAU : On passe uniquement le SpriteBatch
     public virtual void Draw(SpriteBatch spriteBatch, float gameTime) { }
     public virtual void OnOverlap(GameObject other) { }
 
     public virtual void ReceiveMessage(string message)
     {
-        // à vérif
         if (message.ToLower() == "destroy")
         {
             GameObject.IsDestroyed = true;
@@ -441,14 +359,12 @@ public class GameObject
         foreach (var comp in _components) comp.OnOverlap(other);
     }
 
-    // to interract between objects
     public void SendMessage(string message)
     {
         foreach (var comp in _components)
         {
             comp.ReceiveMessage(message);
         }
-        // à vérif
         if (message.ToLower() == "destroy")
         {
             IsDestroyed = true;
@@ -465,12 +381,11 @@ public class COG_Sprite : Component
     public bool IsVisible { get; set; } = true;
     public Vector4 Color { get; set; } = new Vector4(1, 1, 1, 1);
     public Material Mat { get; set; } = new SimpleMaterial();
-    public string TexturePath { get; set; } = "atlas.png";
+    public string TexturePath { get; set; } = "assets/atlas.png";
     public float LayerDepth { get; set; } = 0.5f;
 
     public override void Draw(SpriteBatch spriteBatch, float gameTime)
     {
-        // Si c'est invisible et qu'on n'est pas en debug, on s'arrête.
         if (!IsVisible && !GameConfig.DebugMode) return;
 
         Vector4 drawColor = (!IsVisible && GameConfig.DebugMode) ? GameConfig.DebugColor : Color;
@@ -485,29 +400,22 @@ public class COG_Sprite : Component
 
         Texture tex = AssetManager.GetTexture(TexturePath);
 
-        // --- PROBLÈME 1 CORRIGÉ : DESSIN DES ZONES DE DEBUG ---
-        // On dessine 4 lignes fines (un rectangle creux) pour les objets invisibles !
         if (!IsVisible && GameConfig.DebugMode)
         {
-            Texture pixelTex = AssetManager.GetTexture("pixel.png");
-            float t = 2f; // Épaisseur des bords
+            Texture pixelTex = AssetManager.GetTexture("assets/pixel.png");
+            float t = 2f;
             float w = Transform.Size.X;
             float h = Transform.Size.Y;
             Vector2 pos = new Vector2(Transform.Position.X, Transform.Position.Y);
-
-            // L'astuce est là : on force l'origine en haut à gauche (0, 0)
             Vector2 zeroOrigin = Vector2.Zero;
 
-            // On ajoute zeroOrigin à la fin des arguments pour écraser le comportement par défaut
-            spriteBatch.Draw(pixelTex, pos, new Vector2(w, t), drawColor, 0f, zeroOrigin); // Haut
-            spriteBatch.Draw(pixelTex, new Vector2(pos.X, pos.Y + h - t), new Vector2(w, t), drawColor, 0f, zeroOrigin); // Bas
-            spriteBatch.Draw(pixelTex, pos, new Vector2(t, h), drawColor, 0f, zeroOrigin); // Gauche
-            spriteBatch.Draw(pixelTex, new Vector2(pos.X + w - t, pos.Y), new Vector2(t, h), drawColor, 0f, zeroOrigin); // Droite
+            spriteBatch.Draw(pixelTex, pos, new Vector2(w, t), drawColor, 0f, zeroOrigin);
+            spriteBatch.Draw(pixelTex, new Vector2(pos.X, pos.Y + h - t), new Vector2(w, t), drawColor, 0f, zeroOrigin);
+            spriteBatch.Draw(pixelTex, pos, new Vector2(t, h), drawColor, 0f, zeroOrigin);
+            spriteBatch.Draw(pixelTex, new Vector2(pos.X + w - t, pos.Y), new Vector2(t, h), drawColor, 0f, zeroOrigin);
             return;
         }
 
-        // --- PROBLÈME 2 CORRIGÉ : LES MURS ÉTIRÉS (TILING) ---
-        // Au lieu d'étirer, on utilise la puissance du batcher pour dessiner N tuiles !
         if (Mat is StretchMaterial stretch)
         {
             float tileSize = stretch.TextureBaseSize;
@@ -520,13 +428,11 @@ public class COG_Sprite : Component
             {
                 for (int y = 0; y < tilesY; y++)
                 {
-                    // Position physique de cette petite tuile
                     Vector2 tilePos = new Vector2(
                         Transform.Position.X + (x * tileSize) + tileOrigin.X,
                         Transform.Position.Y + (y * tileSize) + tileOrigin.Y
                     );
 
-                    // On coupe proprement si le mur n'est pas un multiple exact de 50
                     float drawWidth = (x == tilesX - 1 && Transform.Size.X % tileSize != 0) ? Transform.Size.X % tileSize : tileSize;
                     float drawHeight = (y == tilesY - 1 && Transform.Size.Y % tileSize != 0) ? Transform.Size.Y % tileSize : tileSize;
 
@@ -541,7 +447,6 @@ public class COG_Sprite : Component
             return;
         }
 
-        // --- CAS 3 : SPRITE NORMAL (Le Joueur, les Pièces...) ---
         Vector2 position = new Vector2(Transform.Position.X + Transform.Size.X / 2f, Transform.Position.Y + Transform.Size.Y / 2f);
         Vector2 origin = new Vector2(Transform.Size.X / 2f, Transform.Size.Y / 2f);
         spriteBatch.Draw(tex, position, Transform.Size, drawColor, rotationZ, origin, Mat.AtlasOffset, Mat.AtlasSize, LayerDepth);
@@ -619,7 +524,6 @@ public class COG_Collider : Component
         }
     }
 
-    // --- NOUVEAU : La propriété Shape déclenche une reconstruction ---
     private ColliderShape _shape = ColliderShape.Rectangle;
     public ColliderShape Shape
     {
@@ -627,7 +531,6 @@ public class COG_Collider : Component
         set
         {
             _shape = value;
-            // Si le corps physique existe déjà, on le reconstruit pour appliquer la nouvelle forme
             if (PhysicsBody != null) RebuildPhysicsBody();
         }
     }
@@ -639,23 +542,19 @@ public class COG_Collider : Component
         RebuildPhysicsBody();
     }
 
-    // --- NOUVEAU : Méthode séparée pour construire/reconstruire le Collider ---
     public void RebuildPhysicsBody()
     {
-        // 1. Nettoyage de l'ancien body s'il existe
         if (PhysicsBody != null && SceneManager.CurrentScene?.PhysicsWorld != null)
         {
             SceneManager.CurrentScene.PhysicsWorld.Remove(PhysicsBody);
         }
 
-        // 2. Calculs de base
         Vector2 centerPx = new Vector2(Transform.Position.X + Transform.Size.X / 2f, Transform.Position.Y + Transform.Size.Y / 2f);
         var centerMeters = (centerPx * GameConfig.MetersPerPixel).ToAether();
 
         float widthMeters = Transform.Size.X * GameConfig.MetersPerPixel;
         float heightMeters = Transform.Size.Y * GameConfig.MetersPerPixel;
 
-        // 3. Création de la forme
         if (_shape == ColliderShape.Rectangle)
         {
             PhysicsBody = SceneManager.CurrentScene.PhysicsWorld.CreateRectangle(
@@ -669,36 +568,32 @@ public class COG_Collider : Component
 
             if (_shape == ColliderShape.SlopeRight)
             {
-                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(-hw, hh));  // Bas-Gauche
-                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(hw, hh));   // Bas-Droite
-                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(hw, -hh));  // Haut-Droite
+                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(-hw, hh));
+                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(hw, hh));
+                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(hw, -hh));
             }
             else if (_shape == ColliderShape.SlopeLeft)
             {
-                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(-hw, -hh)); // Haut-Gauche
-                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(-hw, hh));  // Bas-Gauche
-                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(hw, hh));   // Bas-Droite
+                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(-hw, -hh));
+                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(-hw, hh));
+                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(hw, hh));
             }
             else if (_shape == ColliderShape.PlayerBox)
             {
-                // On "rabote" les coins inférieurs pour éviter qu'ils n'accrochent les bordures des tuiles.
-                // On enlève environ 10% de la taille de l'objet dans les coins.
                 float chamfer = Math.Min(hw, hh) * 0.2f;
 
-                // Ordre Anti-Horaire (très important pour Aether)
-                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(-hw, -hh)); // Haut Gauche
-                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(-hw, hh - chamfer)); // Bas Gauche (début biseau)
-                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(-hw + chamfer, hh)); // Bas Gauche (fin biseau)
-                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(hw - chamfer, hh));  // Bas Droite (début biseau)
-                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(hw, hh - chamfer));  // Bas Droite (fin biseau)
-                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(hw, -hh)); // Haut Droite
+                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(-hw, -hh));
+                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(-hw, hh - chamfer));
+                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(-hw + chamfer, hh));
+                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(hw - chamfer, hh));
+                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(hw, hh - chamfer));
+                vertices.Add(new nkast.Aether.Physics2D.Common.Vector2(hw, -hh));
             }
 
             PhysicsBody = SceneManager.CurrentScene.PhysicsWorld.CreatePolygon(
                 vertices, 1f, centerMeters, 0f, _bodyType);
         }
 
-        // 4. Application des propriétés fixes
         PhysicsBody.FixedRotation = true;
         PhysicsBody.Tag = GameObject;
 
@@ -738,7 +633,7 @@ public class COG_Collider : Component
 
     public override void ReceiveMessage(string message)
     {
-        switch (message.ToLower()) 
+        switch (message.ToLower())
         {
             case "destroy":
                 this.Destroy();
@@ -759,8 +654,8 @@ public class COG_Collider : Component
 public enum PlayerState
 {
     Normal,
-    Climbing, // Placeholder pour les deux souris
-    Ragdoll   // Chute libre / Roulade
+    Climbing,
+    Ragdoll
 }
 
 public class COG_PlayerController : Component
@@ -770,10 +665,9 @@ public class COG_PlayerController : Component
     public IKeyboard Keyboard { get; set; }
     public IMouse Mouse { get; set; }
 
-    // --- MACHINE A ETATS ---
     public PlayerState State { get; private set; } = PlayerState.Normal;
     private float _fallTimer = 0f;
-    public float FallRagdollThreshold { get; set; } = 0.8f; // Au bout de 0.8s de chute, on passe en Ragdoll
+    public float FallRagdollThreshold { get; set; } = 0.8f;
 
     private nkast.Aether.Physics2D.Dynamics.Body _body;
     private bool _wasJumpPressed = false;
@@ -803,10 +697,8 @@ public class COG_PlayerController : Component
                 {
                     isGrounded = true;
 
-                    // --- NOUVEAU : On lit la friction du sol qu'on touche ! ---
                     var otherFixture = contact.FixtureA.Body == _body ? contact.FixtureB : contact.FixtureA;
                     _currentGroundFriction = otherFixture.Friction;
-                    // -----------------------------------------------------------
                     break;
                 }
             }
@@ -833,25 +725,20 @@ public class COG_PlayerController : Component
 
     private void HandleNormalMode(float deltaTime, bool isGrounded, bool isJumpAction)
     {
-
-        // --- NOUVEAU SYSTÈME DE DÉPLACEMENT AVEC INERTIE ---
         float targetVelX = 0f;
         if (Keyboard.IsKeyPressed(Key.Left)) targetVelX -= Speed;
         if (Keyboard.IsKeyPressed(Key.Right)) targetVelX += Speed;
 
-        // On détermine la vitesse de réaction en fonction de la surface
         float lerpSpeed;
         if (!isGrounded)
-            lerpSpeed = 5f; // Dans les airs (Un peu d'inertie pour ajuster le saut)
+            lerpSpeed = 5f;
         else if (_currentGroundFriction < 0.1f)
-            lerpSpeed = 1.5f; // SUR LA GLACE ! (Très faible friction, on glisse longtemps)
+            lerpSpeed = 1.5f;
         else
-            lerpSpeed = 25f; // SUR SOL NORMAL (Friction forte, on s'arrête et on démarre sec)
+            lerpSpeed = 25f;
 
-        // On "glisse" de notre vélocité actuelle vers la vélocité cible
         float newVelX = _body.LinearVelocity.X + (targetVelX - _body.LinearVelocity.X) * (lerpSpeed * deltaTime);
         _body.LinearVelocity = new nkast.Aether.Physics2D.Common.Vector2(newVelX, _body.LinearVelocity.Y);
-        // ---------------------------------------------------
 
         if (isJumpAction && !_wasJumpPressed && isGrounded && _body.LinearVelocity.Y >= -0.1f)
         {
@@ -866,7 +753,7 @@ public class COG_PlayerController : Component
             {
                 SwitchState(PlayerState.Ragdoll);
                 Random rnd = new Random();
-                float randomSpin = (float)(rnd.NextDouble()) * 4f; // Entre -0.5 et 0.5
+                float randomSpin = (float)(rnd.NextDouble()) * 4f;
                 _body.ApplyAngularImpulse(randomSpin);
             }
         }
@@ -878,40 +765,32 @@ public class COG_PlayerController : Component
         if (Keyboard.IsKeyPressed(Key.C))
         {
             SwitchState(PlayerState.Climbing);
-            // BOOM ! On donne une énorme impulsion pour te décoller du sol avant d'accrocher la corde
             _body.ApplyLinearImpulse(new nkast.Aether.Physics2D.Common.Vector2(0, -10f));
         }
     }
 
     private void HandleClimbingMode(float deltaTime, bool isGrounded)
     {
-        // En mode grimpe, la gravité s'applique NORMALEMENT. 
-        // Ce sont les forces calculées par COG_RopeClimber qui nous soulèveront !
         _body.IgnoreGravity = false;
 
-        // Sortir du mode (La touche N détache tout via RopeClimber, puis on passe en Ragdoll)
         if (Keyboard.IsKeyPressed(Key.N))
         {
             SwitchState(PlayerState.Ragdoll);
             Random rnd = new Random();
-            float randomSpin = (float)(rnd.NextDouble()) * 0.5f; // Entre -0.5 et 0.5
+            float randomSpin = (float)(rnd.NextDouble()) * 0.5f;
             _body.ApplyAngularImpulse(randomSpin);
         }
     }
 
     private void HandleRagdollMode(float deltaTime, bool isGrounded, bool isJumpAction)
     {
-        // LA MAGIE EST ICI : On libère la rotation !
         _body.FixedRotation = false;
 
-        // On ne peut plus se diriger, on subit juste la physique.
-        // Mécanique de récupération : Si on est au sol et qu'on a presque fini de rouler, on peut sauter pour se relever.
         if (isGrounded && Math.Abs(_body.LinearVelocity.X) < 1.5f && Math.Abs(_body.LinearVelocity.Y) < 1.5f)
         {
             if (isJumpAction && !_wasJumpPressed)
             {
                 SwitchState(PlayerState.Normal);
-                // Petit saut bonus pour marquer la récupération
                 _body.ApplyLinearImpulse(new nkast.Aether.Physics2D.Common.Vector2(0, -5f));
             }
         }
@@ -932,16 +811,16 @@ public class COG_PlayerController : Component
                 collider.Restitution = 0f;
                 _body.AngularDamping = 0f;
                 _body.LinearDamping = 0f;
-                _body.FixedRotation = true; // SEUL LE MODE NORMAL EST DROIT
+                _body.FixedRotation = true;
                 _body.Rotation = 0f;
                 break;
 
             case PlayerState.Climbing:
                 collider.Friction = 0f;
                 collider.Restitution = 0f;
-                _body.AngularDamping = 1f; // On freine un peu le balancement du pendule
-                _body.LinearDamping = 0.5f; // Friction de l'air pendant qu'on se balance
-                _body.FixedRotation = false; // ON PEUT SE BALANCER ET TOURNER !
+                _body.AngularDamping = 1f;
+                _body.LinearDamping = 0.5f;
+                _body.FixedRotation = false;
                 break;
 
             case PlayerState.Ragdoll:
@@ -949,11 +828,9 @@ public class COG_PlayerController : Component
                 collider.Restitution = 0.3f;
                 _body.AngularDamping = 1.0f;
                 _body.LinearDamping = 0.4f;
-                _body.FixedRotation = false; // LA CHUTE TOURNE AUSSI
+                _body.FixedRotation = false;
                 break;
         }
-
-        Console.WriteLine($"[ÉTAT DU JOUEUR] -> {newState} (Friction: {collider.Friction})");
     }
 }
 
@@ -970,7 +847,6 @@ public class COG_CameraZone : Component
     }
 }
 
-// Nouveaux composants de comportement
 public class COG_CoinBehavior : Component
 {
     public override void OnOverlap(GameObject other)
@@ -1005,10 +881,6 @@ public class COG_TriggerBehavior : Component
             {
                 target.SendMessage(MessageToSend);
             }
-            else
-            {
-                Console.WriteLine($"[ATTENTION] Cible UID '{TargetUid}' introuvable dans la scène !");
-            }
         }
     }
 }
@@ -1017,20 +889,18 @@ public class COG_RopeClimber : Component
 {
     public float MaxTotalRopeLength { get; set; } = 15f;
     public float WinchSpeed { get; set; } = 8f;
-
-    // La force du ressort de la corde (plus c'est grand, plus la corde tire fort)
     public float RopeStiffness { get; set; } = 150f;
 
-    public class Rope(byte Id)
+    public class Rope
     {
-        public RawInputDeviceHandle MouseHandle;
+        public int MouseId = -1; // Remplacement du Handle
         public Vector2 AnchorPointPx;
         public float DesiredLength;
         public bool IsAttached = false;
-        public byte _id = Id;
-
-        // NOUVEAU : Mémorise si on cliquait à la frame précédente
+        public byte _id;
         public bool WasPullInput = false;
+
+        public Rope(byte id) { _id = id; }
     }
 
     public Rope LeftArm = new Rope(0);
@@ -1059,12 +929,11 @@ public class COG_RopeClimber : Component
             return;
         }
 
-        // Assignation automatique des souris aux bras
-        if (MyGame.Cursors.Count > 0) LeftArm.MouseHandle = MyGame.Cursors[0].DeviceHandle;
-        if (MyGame.Cursors.Count > 1) RightArm.MouseHandle = MyGame.Cursors[1].DeviceHandle;
+        // Mapping des IDs des souris Silk.NET
+        if (MyGame.Cursors.Count > 0) LeftArm.MouseId = MyGame.Cursors[0].DeviceId;
+        if (MyGame.Cursors.Count > 1) RightArm.MouseId = MyGame.Cursors[1].DeviceId;
 
-        // Si une seule souris, elle contrôle les deux bras alternativement selon où on clique
-        if (MyGame.Cursors.Count == 1) RightArm.MouseHandle = MyGame.Cursors[0].DeviceHandle;
+        if (MyGame.Cursors.Count == 1) RightArm.MouseId = MyGame.Cursors[0].DeviceId;
 
         HandleArm(LeftArm, deltaTime);
         HandleArm(RightArm, deltaTime);
@@ -1072,18 +941,17 @@ public class COG_RopeClimber : Component
 
     private void HandleArm(Rope arm, float deltaTime)
     {
-        if (arm.MouseHandle == default) return;
+        if (arm.MouseId == -1) return;
 
-        var cursor = MyGame.Cursors.Find(c => c.DeviceHandle == arm.MouseHandle);
+        var cursor = MyGame.Cursors.Find(c => c.DeviceId == arm.MouseId);
         if (cursor == null) return;
 
         Vector2 targetWorld = SceneManager.CurrentScene.Camera.ScreenToWorld(cursor.Position);
 
-        // --- LOGIQUE D'INVERSION ---
         bool pullInput;
         bool releaseInput;
 
-        if (arm._id == 1) // Ton inversion selon l'ID du bras
+        if (arm._id == 1)
         {
             pullInput = cursor.RightDown;
             releaseInput = cursor.LeftDown;
@@ -1094,29 +962,21 @@ public class COG_RopeClimber : Component
             releaseInput = cursor.RightDown;
         }
 
-        // --- NOUVEAU : DÉTECTION DU CLIC (JustPressed) ---
-        // Vrai uniquement à la frame exacte où le bouton s'enfonce
         bool pullJustPressed = pullInput && !arm.WasPullInput;
         arm.WasPullInput = pullInput;
 
-        // Si on vient juste de cliquer...
         if (pullJustPressed)
         {
-            // 1. On détache l'ancienne corde (si elle existait)
             if (arm.IsAttached) DetachRope(arm);
-
-            // 2. On tente immédiatement d'en accrocher une nouvelle !
             TryAttachRope(arm, targetWorld);
         }
 
-        // Le clic molette reste dispo si on veut "juste" se lâcher sans relancer de corde
         if (cursor.MiddleDown) DetachRope(arm);
 
-        // --- APPLICATION DES FORCES ET DU TREUIL ---
         if (arm.IsAttached)
         {
-            if (pullInput) Winch(arm, 1f, deltaTime);    // Maintenir enfoncé pour tirer
-            if (releaseInput) Winch(arm, -1f, deltaTime); // Maintenir l'autre bouton pour relâcher
+            if (pullInput) Winch(arm, 1f, deltaTime);
+            if (releaseInput) Winch(arm, -1f, deltaTime);
 
             ApplyRopeForce(arm);
         }
@@ -1151,7 +1011,6 @@ public class COG_RopeClimber : Component
                 arm.AnchorPointPx = hitPoint.ToNumeric() * GameConfig.PixelsPerMeter;
                 arm.DesiredLength = distanceMeters;
                 arm.IsAttached = true;
-                Console.WriteLine($"[CORDE ATTACHÉE] Longueur: {distanceMeters}m");
             }
         }
     }
@@ -1162,7 +1021,6 @@ public class COG_RopeClimber : Component
         {
             arm.IsAttached = false;
             arm.DesiredLength = 0f;
-            Console.WriteLine("[CORDE DÉTACHÉE]");
         }
     }
 
@@ -1174,23 +1032,19 @@ public class COG_RopeClimber : Component
 
     private void ApplyRopeForce(Rope arm)
     {
-        // Loi de Hooke : Force = Rigidité * (DistanceActuelle - DistanceVoulue)
         var anchorMeters = (arm.AnchorPointPx * GameConfig.MetersPerPixel).ToAether();
         var playerMeters = _playerBody.Position;
 
         var direction = anchorMeters - playerMeters;
         float currentDistance = direction.Length();
 
-        // On ne tire que si la corde est tendue (si le joueur est plus loin que la longueur désirée)
         if (currentDistance > arm.DesiredLength && currentDistance > 0.01f)
         {
-            direction.Normalize(); // Obtenir le vecteur directionnel de base (longueur de 1)
+            direction.Normalize();
 
-            // Calcul de la tension de la corde
             float stretch = currentDistance - arm.DesiredLength;
             float forceMagnitude = RopeStiffness * stretch;
 
-            // On applique la force au centre du joueur
             var force = direction * forceMagnitude;
             _playerBody.ApplyForce(force);
         }
@@ -1200,7 +1054,7 @@ public class COG_RopeClimber : Component
     {
         if (_playerBody == null) return;
         Vector3 physicalCenter = new Vector3(PlayerCenterPx.X, PlayerCenterPx.Y, 0);
-        Texture pixelTex = AssetManager.GetTexture("pixel.png");
+        Texture pixelTex = AssetManager.GetTexture("assets/pixel.png");
         float thickness = 2f;
 
         if (LeftArm.IsAttached) DrawRope(spriteBatch, pixelTex, physicalCenter, LeftArm.AnchorPointPx, new Vector4(1f, 0.3f, 0.3f, 1f), thickness);
@@ -1215,7 +1069,6 @@ public class COG_RopeClimber : Component
         float angle = MathF.Atan2(direction.Y, direction.X);
         Vector2 midPoint = (start2D + end) / 2f;
 
-        // Depth à 1.0f pour qu'elles soient dessinées tout devant !
         spriteBatch.Draw(tex, midPoint, new Vector2(length, thickness), color, angle, new Vector2(length / 2f, thickness / 2f), null, null, 1.0f);
     }
 }
@@ -1242,14 +1095,9 @@ public class COG_AudioSource : Component
     private short[] _interleavedBuffer;
 
     private bool _isInitialized = false;
-
-    // NOUVEAU : On garde en mémoire si on a volontairement lancé ou coupé le son
     private bool _isPlaying = false;
 
-    public override void Awake()
-    {
-        // On attend la première frame pour charger les bons chemins depuis le JSON
-    }
+    public override void Awake() { }
 
     private unsafe void InitializeAudio()
     {
@@ -1284,12 +1132,10 @@ public class COG_AudioSource : Component
                 AudioManager.AL.SourceQueueBuffers(_sourceId, 1, &bufferId);
             }
 
-            // MODIFIÉ : On met à jour notre variable interne
             _isPlaying = PlayOnAwake;
             if (_isPlaying)
             {
                 AudioManager.AL.SourcePlay(_sourceId);
-                Console.WriteLine($"[AUDIO] BGM lancée : {MidiPath} avec {SoundFontPath}");
             }
         }
         catch (Exception ex)
@@ -1321,7 +1167,6 @@ public class COG_AudioSource : Component
             processed--;
         }
 
-        // CORRECTION MAJEURE ICI : On ne force la lecture QUE si _isPlaying est vrai
         if (_isPlaying)
         {
             AudioManager.AL.GetSourceProperty(_sourceId, GetSourceInteger.SourceState, out int state);
@@ -1343,22 +1188,19 @@ public class COG_AudioSource : Component
         switch (message.ToLower())
         {
             case "play":
-                if (! _isPlaying)
+                if (!_isPlaying)
                 {
-                    _isPlaying = true; // On l'autorise à jouer
+                    _isPlaying = true;
                     AudioManager.AL.SourcePlay(_sourceId);
-                    Console.WriteLine($"[AUDIO] Play reçu : Lecture déclenchée ! ({MidiPath})");
                 }
                 break;
             case "pause":
-                _isPlaying = false; // On lui interdit de forcer la reprise dans l'Update
+                _isPlaying = false;
                 AudioManager.AL.SourcePause(_sourceId);
-                Console.WriteLine($"[AUDIO] Pause reçue : Lecture suspendue !");
                 break;
             case "stop":
                 _isPlaying = false;
                 AudioManager.AL.SourceStop(_sourceId);
-                Console.WriteLine($"[AUDIO] Stop reçu : Lecture arrêtée !");
                 break;
         }
     }
@@ -1411,14 +1253,11 @@ public class SimpleMaterial : Material { }
 public class StretchMaterial : Material
 {
     public float TextureBaseSize { get; set; } = 50f;
-    // Plus besoin de GetUVSize ici, la boucle s'en charge !
 }
 
 //██████████████████████████████████
 //████   PREFABS (Factoires)    ████
 //██████████████████████████████████
-
-// Ces classes agissent comme des "Blueprints" pour construire des GameObjects pré-configurés.
 
 public class PlayerPrefab : GameObject
 {
@@ -1433,7 +1272,7 @@ public class PlayerPrefab : GameObject
 
         var col = AddComponent<COG_Collider>();
         col.IsSolid = true;
-        col.BodyType = BodyType.Dynamic; // <--- NOUVEAU !
+        col.BodyType = BodyType.Dynamic;
         col.Friction = 0.0f;
 
         var sprite = AddComponent<COG_Sprite>();
@@ -1441,7 +1280,7 @@ public class PlayerPrefab : GameObject
         sprite.Mat = new SimpleMaterial
         {
             AtlasSize = new Vector2(0.125f, 0.125f),
-            AtlasOffset = new Vector2(4 * 0.125f, 0f) // Tuile du joueur
+            AtlasOffset = new Vector2(4 * 0.125f, 0f)
         };
 
         var climber = AddComponent<COG_RopeClimber>();
@@ -1458,7 +1297,6 @@ public class WallPrefab : GameObject
         var col = AddComponent<COG_Collider>();
         col.IsSolid = true;
         col.Friction = 0.1f;
-        //col.Restitution = 0.25f;
 
         var sprite = AddComponent<COG_Sprite>();
         float tileSizeInAtlas = 64f / 512f;
@@ -1480,12 +1318,11 @@ public class SlopePrefab : GameObject
 
         var col = AddComponent<COG_Collider>();
         col.IsSolid = true;
-        col.Friction = 0.5f; // On met un peu de friction pour ne pas glisser indéfiniment
+        col.Friction = 0.5f;
         col.Shape = slopeType;
 
         var sprite = AddComponent<COG_Sprite>();
         float tileSizeInAtlas = 64f / 512f;
-        // On utilise un SimpleMaterial pour éviter l'étirement des tuiles sur les diagonales complexes
         sprite.Mat = new SimpleMaterial
         {
             AtlasSize = new Vector2(tileSizeInAtlas, tileSizeInAtlas),
@@ -1503,7 +1340,7 @@ public class IcePrefab : GameObject
 
         var col = AddComponent<COG_Collider>();
         col.IsSolid = true;
-        col.Friction = 0f; // <--- C'EST DE LA GLACE !
+        col.Friction = 0f;
 
         var sprite = AddComponent<COG_Sprite>();
         float tileSizeInAtlas = 64f / 512f;
@@ -1513,7 +1350,6 @@ public class IcePrefab : GameObject
             AtlasSize = new Vector2(tileSizeInAtlas, tileSizeInAtlas),
             AtlasOffset = new Vector2(tileOffset.X * tileSizeInAtlas, tileOffset.Y * tileSizeInAtlas)
         };
-        // On lui donne une teinte bleutée pour le différencier des murs normaux
         sprite.Color = new Vector4(0.6f, 0.9f, 1f, 1f);
     }
 }
