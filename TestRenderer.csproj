@@ -10,6 +10,7 @@
 
 		<WasmMainJSPath>main.js</WasmMainJSPath>
 		<RunAOTCompilation>true</RunAOTCompilation>
+		<WasmBuildNative>true</WasmBuildNative>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -19,7 +20,6 @@
 	<ItemGroup>
 		<PackageReference Include="Aether.Physics2D" Version="2.2.0" />
 		<PackageReference Include="MeltySynth" Version="2.4.1" />
-
 		<PackageReference Include="Silk.NET" Version="2.23.0" />
 		<PackageReference Include="Silk.NET.Core" Version="2.23.0" />
 		<PackageReference Include="Silk.NET.Input" Version="2.23.0" />
@@ -27,6 +27,7 @@
 		<PackageReference Include="Silk.NET.Input.Sdl" Version="2.23.0" />
 		<PackageReference Include="Silk.NET.Maths" Version="2.23.0" />
 		<PackageReference Include="Silk.NET.OpenGL" Version="2.23.0" />
+		<PackageReference Include="Silk.NET.OpenGLES" Version="2.23.0" />
 		<PackageReference Include="Silk.NET.Windowing" Version="2.23.0" />
 		<PackageReference Include="Silk.NET.Windowing.Common" Version="2.23.0" />
 		<PackageReference Include="Silk.NET.Windowing.Sdl" Version="2.23.0" />
@@ -38,21 +39,30 @@
 		<WasmFilesToInclude Include="index.html" />
 	</ItemGroup>
 
-	<PropertyGroup>
-		<WasmBuildNative>true</WasmBuildNative>
-	</PropertyGroup>
+	<ItemGroup>
+		<TrimmerRootAssembly Include="Silk.NET.Windowing.Sdl" />
+		<TrimmerRootAssembly Include="Silk.NET.Input.Sdl" />
+		<TrimmerRootAssembly Include="Silk.NET.OpenGL" />
+		<TrimmerRootAssembly Include="Silk.NET.OpenGLES" />
+		<TrimmerRootAssembly Include="Silk.NET.Core" />
+		<TrimmerRootAssembly Include="Silk.NET.Windowing.Common" />
+		<TrimmerRootAssembly Include="Silk.NET.Input.Common" />
+		<TrimmerRootAssembly Include="Aether.Physics2D" />
+		
+	</ItemGroup>
 
 	<ItemGroup>
 		<EmscriptenCompileOption Include="-s" />
 		<EmscriptenCompileOption Include="USE_SDL=2" />
+		
 		<EmscriptenCompileOption Include="-s" />
 		<EmscriptenCompileOption Include="MIN_WEBGL_VERSION=2" />
 
 		<EmscriptenLinkOption Include="-s" />
 		<EmscriptenLinkOption Include="USE_SDL=2" />
+		
 		<EmscriptenLinkOption Include="-s" />
 		<EmscriptenLinkOption Include="MIN_WEBGL_VERSION=2" />
 	</ItemGroup>
-
 
 </Project>

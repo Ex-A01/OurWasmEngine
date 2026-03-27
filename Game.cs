@@ -6,7 +6,7 @@ using nkast.Aether.Physics2D.Dynamics.Joints;
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.OpenAL;
-using Silk.NET.OpenGL;
+using Silk.NET.OpenGLES;
 using Silk.NET.Windowing;
 using System;
 using System.Collections.Generic;
@@ -49,17 +49,15 @@ public class MyGame : IDisposable
 
     public MyGame()
     {
-        // On utilise ViewOptions au lieu de WindowOptions
-        var options = ViewOptions.Default;
+        // Revenir à WindowOptions
+        var options = WindowOptions.Default;
 
         // On cible spécifiquement OpenGL ES 3.0 (WebGL 2.0)
         options.API = new GraphicsAPI(ContextAPI.OpenGLES, ContextProfile.Core, ContextFlags.Default, new APIVersion(3, 0));
 
-        // Note : Une "Vue" sur le Web n'a pas de titre ni de taille explicite en C#.
-        // Sa taille est définie par le style CSS du <canvas> dans ton index.html !
-
-        // On utilise GetView au lieu de Create !
-        _window = Window.GetView(options);
+        // Emscripten gère le <canvas> HTML comme une fenêtre SDL standard
+        // On utilise donc Create au lieu de GetView !
+        _window = Window.Create(options);
 
         _window.Load += OnLoad;
         _window.Update += OnUpdate;
@@ -71,7 +69,7 @@ public class MyGame : IDisposable
 
     private void OnLoad()
     {
-        _gl = _window.CreateOpenGL();
+        _gl = _window.CreateOpenGLES();
         _gl.Enable(EnableCap.Blend);
         _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 

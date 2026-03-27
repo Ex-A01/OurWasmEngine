@@ -1,4 +1,4 @@
-﻿using Silk.NET.OpenGL;
+﻿using Silk.NET.OpenGLES;
 using System.Collections.Generic;
 
 public static class AssetManager
