@@ -1,24 +1,59 @@
-﻿using Silk.NET.OpenAL;
-using MeltySynth;
+﻿using MeltySynth;
+using Silk.NET.Core.Contexts;
+using Silk.NET.OpenAL;
+using System.Runtime.InteropServices;
 
 public static class AudioManager
 {
     private static ALContext _alc;
 
-    // NOUVEAU : On rend l'API AL publique !
+    // L'API AL publique !
     public static AL AL { get; private set; }
 
     private static unsafe Device* _device;
     private static unsafe Context* _context;
 
+    // --- NOUVEAU : Contexte spécial pour le WebAssembly ---
+    // Ce contexte empêche Silk.NET de chercher une DLL et utilise directement Emscripten
+    private class WebALContext : INativeContext
+    {
+        [DllImport("openal32", EntryPoint = "alGetProcAddress")]
+        private static extern IntPtr AlGetProcAddress(string procName);
+
+        [DllImport("openal32", EntryPoint = "alcGetProcAddress")]
+        private static extern IntPtr AlcGetProcAddress(IntPtr device, string procName);
+
+        public IntPtr GetProcAddress(string proc, int? slot = null)
+        {
+            // Si la fonction commence par "alc", on appelle le loader spécifique ALC
+            if (proc.StartsWith("alc", StringComparison.OrdinalIgnoreCase))
+            {
+                return AlcGetProcAddress(IntPtr.Zero, proc);
+            }
+            // Sinon, c'est une fonction AL classique
+            return AlGetProcAddress(proc);
+        }
+
+        public bool TryGetProcAddress(string proc, out IntPtr addr, int? slot = null)
+        {
+            addr = GetProcAddress(proc, slot);
+            return addr != IntPtr.Zero;
+        }
+
+        public void Dispose() { }
+    }
+
     public static unsafe void Initialize()
     {
-        // On récupère les API
-        _alc = ALContext.GetApi();
-        AL = AL.GetApi();
+        // On crée notre contexte WebALContext qui fait le pont avec Emscripten
+        var webContext = new WebALContext();
 
-        // On ouvre le périphérique par défaut (la carte son)
-        _device = _alc.OpenDevice(string.Empty);
+        // CORRECTION : On utilise le constructeur classique au lieu de GetApi() !
+        _alc = new ALContext(webContext);
+        AL = new AL(webContext);
+
+        // On ouvre le périphérique par défaut (la carte son du navigateur)
+        _device = _alc.OpenDevice(null);
         if (_device == null)
         {
             Console.WriteLine("[AUDIO] Erreur critique : Impossible de trouver une carte son.");
@@ -32,7 +67,6 @@ public static class AudioManager
         Console.WriteLine("[AUDIO] OpenAL initialisé avec succès !");
     }
 
-    // À appeler dans la méthode Dispose() de MyGame
     public static unsafe void Dispose()
     {
         if (_context != null)
@@ -49,6 +83,7 @@ public static class AudioManager
         AL?.Dispose();
         _alc?.Dispose();
     }
+
 }
 
 public class MidiPlayer

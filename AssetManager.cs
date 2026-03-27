@@ -16,6 +16,14 @@ public static class AssetManager
     {
         if (_gl == null) throw new System.Exception("AssetManager non initialisé !");
 
+        path = path.Replace('\\', '/');
+
+        // 2. Si le chemin dans le JSON a oublié le dossier, on le corrige automatiquement
+        if (!path.StartsWith("assets/"))
+        {
+            path = "assets/" + path;
+        }
+
         if (_textures.TryGetValue(path, out var texture))
         {
             return texture;

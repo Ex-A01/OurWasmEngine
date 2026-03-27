@@ -1,22 +1,16 @@
 ﻿using MeltySynth;
-using nkast.Aether.Physics2D;
-using nkast.Aether.Physics2D.Collision.Shapes;
 using nkast.Aether.Physics2D.Dynamics;
-using nkast.Aether.Physics2D.Dynamics.Joints;
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.OpenAL;
 using Silk.NET.OpenGLES;
-using Silk.NET.Windowing;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
 
 public class MyGame : IDisposable
 {
-    private IView _window;
     private GL _gl;
-    private IInputContext _input;
     private Matrix4X4<float> _projection;
     private Shader _shader;
 
@@ -24,14 +18,12 @@ public class MyGame : IDisposable
     private SpriteBatch _spriteBatch;
     private float _totalTime = 0f;
 
-    // Nouveau curseur adapté au Web (Silk.NET standard)
+    // Curseur virtuel conservé, mais nous le mettrons à jour via JS Interop plus tard
     public class VirtualCursor
     {
-        public int DeviceId; // Remplacement du RawInputDeviceHandle
+        public int DeviceId;
         public Vector2 Position;
         public Vector4 Color;
-
-        // État des boutons
         public bool LeftDown;
         public bool RightDown;
         public bool MiddleDown;
@@ -45,31 +37,17 @@ public class MyGame : IDisposable
     }
 
     public static List<VirtualCursor> Cursors = new List<VirtualCursor>();
-    private Vector4[] _cursorColors = { GameConfig.CursorColor, new Vector4(1f, 0f, 0f, 1f), new Vector4(0f, 1f, 0f, 1f), new Vector4(1f, 1f, 0f, 1f) };
+    private Vector4[] _cursorColors = { GameConfig.CursorColor, new Vector4(1f, 0f, 0f, 1f) };
 
-    public MyGame()
+    // 1. On injecte GL directement, plus besoin de créer de fenêtre !
+    public MyGame(GL gl)
     {
-        // Revenir à WindowOptions
-        var options = WindowOptions.Default;
-
-        // On cible spécifiquement OpenGL ES 3.0 (WebGL 2.0)
-        options.API = new GraphicsAPI(ContextAPI.OpenGLES, ContextProfile.Core, ContextFlags.Default, new APIVersion(3, 0));
-
-        // Emscripten gère le <canvas> HTML comme une fenêtre SDL standard
-        // On utilise donc Create au lieu de GetView !
-        _window = Window.Create(options);
-
-        _window.Load += OnLoad;
-        _window.Update += OnUpdate;
-        _window.Render += OnRender;
-        _window.Closing += Dispose;
+        _gl = gl;
     }
 
-    public void Run() => _window.Run();
-
-    private void OnLoad()
+    // 2. Initialisation explicite (remplace _window.Load)
+    public void Load()
     {
-        _gl = _window.CreateOpenGLES();
         _gl.Enable(EnableCap.Blend);
         _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
@@ -77,35 +55,39 @@ public class MyGame : IDisposable
         AudioManager.Initialize();
 
         _spriteBatch = new SpriteBatch(_gl);
-        _input = _window.CreateInput();
+
         _gl.ClearColor(GameConfig.BackgroundColor.X, GameConfig.BackgroundColor.Y, GameConfig.BackgroundColor.Z, GameConfig.BackgroundColor.W);
-        _projection = Matrix4x4.CreateOrthographicOffCenter(0f, GameConfig.WindowWidth, GameConfig.WindowHeight, 0f, -1.0f, 1.0f).ToGeneric();
 
-        foreach (var keyboard in _input.Keyboards)
+        // La projection initiale
+        Interop.GameInstance = this;
+
+        /*Console.WriteLine("--- DÉBOGAGE DU SYSTÈME DE FICHIERS VIRTUEL ---");
+        Console.WriteLine($"Répertoire de base : {AppContext.BaseDirectory}");
+        try
         {
-            keyboard.KeyDown += (k, key, _) =>
+            // On fouille depuis la racine du disque dur virtuel
+            string[] allFiles = System.IO.Directory.GetFiles("/", "*.*", System.IO.SearchOption.AllDirectories);
+            foreach (var file in allFiles)
             {
-                // Note : Application.Exit() n'a pas vraiment de sens en Wasm, mais Window.Close() arrêtera la boucle.
-                if (key == Key.Escape) _window.Close();
-                if (key == Key.F3) GameConfig.DebugMode = !GameConfig.DebugMode;
-            };
+                Console.WriteLine(file);
+            }
         }
-
-        // --- SETUP SOURIS POUR LE WEB ---
-        // On initialise un curseur virtuel pour chaque souris détectée par le navigateur (généralement 1 seule)
-        for (int i = 0; i < _input.Mice.Count; i++)
+        catch (Exception ex)
         {
-            _input.Mice[i].Cursor.CursorMode = CursorMode.Disabled; // Optionnel : cache le curseur de l'OS
-            Vector4 color = _cursorColors[Cursors.Count % _cursorColors.Length];
-            Cursors.Add(new VirtualCursor(i, new Vector2(GameConfig.WindowWidth / 2f, GameConfig.WindowHeight / 2f), color));
-            Console.WriteLine($"[SOURIS INIT] Id: {i}");
+            Console.WriteLine("Erreur de lecture du VFS : " + ex.Message);
         }
+        Console.WriteLine("-----------------------------------------------");*/
 
         _shader = new Shader(_gl, "assets/base.vert", "assets/base.frag");
 
+        // Ajout d'un curseur par défaut (pour l'instant la souris du navigateur)
+        Cursors.Add(new VirtualCursor(0, new Vector2(GameConfig.WindowWidth / 2f, GameConfig.WindowHeight / 2f), _cursorColors[0]));
+
         try
         {
-            SceneLoader.LoadSceneFromJson("assets/Paff.json", _input.Keyboards[0], _input.Mice[0]);
+            // ATTENTION : Les inputs Silk sont cassés sur le Web. 
+            // On passe "null" temporairement, on refera l'input juste après.
+            SceneLoader.LoadSceneFromJson("assets/levels/Paff.json", null, null);
             Console.WriteLine($"[SCENE LOADED] {SceneManager.CurrentScene.Name} chargée avec succès !");
         }
         catch (Exception ex)
@@ -114,36 +96,28 @@ public class MyGame : IDisposable
         }
     }
 
-    private void OnUpdate(double deltaTime)
+    // 3. Gestion du redimensionnement du canvas HTML
+    public void Resize(int width, int height)
     {
-        float dt = Math.Min((float)deltaTime, 0.05f);
+        _gl.Viewport(0, 0, (uint)width, (uint)height);
+        _projection = Matrix4x4.CreateOrthographicOffCenter(0f, width, height, 0f, -1.0f, 1.0f).ToGeneric();
+    }
+
+    // 4. Update logique (remplace _window.Update)
+    public void Update(float deltaTime)
+    {
+        float dt = Math.Min(deltaTime, 0.05f);
         _totalTime += dt;
-
-        // --- MISE À JOUR DES CURSEURS ---
-        // Au lieu d'écouter des événements Windows, on sonde (polling) l'état de Silk.NET
-        for (int i = 0; i < _input.Mice.Count && i < Cursors.Count; i++)
-        {
-            var mouse = _input.Mice[i];
-            var cursor = Cursors[i];
-
-            cursor.Position = mouse.Position;
-
-            // On s'assure que le curseur ne sort pas de l'écran logique
-            cursor.Position.X = Math.Clamp(cursor.Position.X, 0, GameConfig.WindowWidth);
-            cursor.Position.Y = Math.Clamp(cursor.Position.Y, 0, GameConfig.WindowHeight);
-
-            cursor.LeftDown = mouse.IsButtonPressed(MouseButton.Left);
-            cursor.RightDown = mouse.IsButtonPressed(MouseButton.Right);
-            cursor.MiddleDown = mouse.IsButtonPressed(MouseButton.Middle);
-        }
 
         SceneManager.CurrentScene?.Update(dt);
     }
 
-    private void OnRender(double deltaTime)
+    // 5. Update graphique (remplace _window.Render)
+    public void Render()
     {
         _gl.Clear(ClearBufferMask.ColorBufferBit);
 
+        // --- DESSIN DE LA SCÈNE --- (Rien n'est cassé ici, ça marche tout seul !)
         if (SceneManager.CurrentScene != null)
         {
             _spriteBatch.Begin(_shader, _projection, SceneManager.CurrentScene.Camera.GetViewMatrix().ToGeneric());
@@ -151,6 +125,7 @@ public class MyGame : IDisposable
             _spriteBatch.End();
         }
 
+        // --- DESSIN DE L'UI / CURSEURS ---
         var identity = Matrix4X4<float>.Identity;
         _spriteBatch.Begin(_shader, _projection, identity);
 
@@ -168,12 +143,11 @@ public class MyGame : IDisposable
 
     public void Dispose()
     {
-        _spriteBatch.Dispose();
+        _spriteBatch?.Dispose();
         AssetManager.DisposeAll();
         AudioManager.Dispose();
-        _shader.Dispose();
-        _gl.Dispose();
-        _input.Dispose();
+        _shader?.Dispose();
+        // On ne dispose plus GL ni Input ici, c'est le Program.cs qui gère le contexte global
     }
 }
 
@@ -183,8 +157,8 @@ public class MyGame : IDisposable
 
 public static class GameConfig
 {
-    public const float WindowWidth = 800f;
-    public const float WindowHeight = 600f;
+    public static float WindowWidth = 800f;
+    public static float WindowHeight = 600f;
     public static bool DebugMode = true;
 
     public const float PixelsPerMeter = 50f;
@@ -703,7 +677,9 @@ public class COG_PlayerController : Component
             contactEdge = contactEdge.Next;
         }
 
-        bool isJumpAction = Keyboard.IsKeyPressed(Key.Space) || Keyboard.IsKeyPressed(Key.Up) || Mouse.IsButtonPressed(MouseButton.Right);
+        // Remplace les Keyboard?.IsKeyPressed par les booléens de l'Interop :
+        bool isJumpAction = Interop.SpacePressed || Interop.UpPressed ||
+                            (MyGame.Cursors.Count > 0 && MyGame.Cursors[0].RightDown);
 
         switch (State)
         {
@@ -724,8 +700,8 @@ public class COG_PlayerController : Component
     private void HandleNormalMode(float deltaTime, bool isGrounded, bool isJumpAction)
     {
         float targetVelX = 0f;
-        if (Keyboard.IsKeyPressed(Key.Left)) targetVelX -= Speed;
-        if (Keyboard.IsKeyPressed(Key.Right)) targetVelX += Speed;
+        if (Interop.LeftPressed) targetVelX -= Speed;
+        if (Interop.RightPressed) targetVelX += Speed;
 
         float lerpSpeed;
         if (!isGrounded)
@@ -760,7 +736,7 @@ public class COG_PlayerController : Component
             _fallTimer = 0f;
         }
 
-        if (Keyboard.IsKeyPressed(Key.C))
+        if (Interop.CPressed)
         {
             SwitchState(PlayerState.Climbing);
             _body.ApplyLinearImpulse(new nkast.Aether.Physics2D.Common.Vector2(0, -10f));
@@ -771,7 +747,7 @@ public class COG_PlayerController : Component
     {
         _body.IgnoreGravity = false;
 
-        if (Keyboard.IsKeyPressed(Key.N))
+        if (Interop.NPressed)
         {
             SwitchState(PlayerState.Ragdoll);
             Random rnd = new Random();
@@ -1082,8 +1058,8 @@ public class COG_AudioSource : Component
     private uint _sourceId;
     private uint[] _buffers;
     private const int NUM_BUFFERS = 3;
-    private const int BUFFER_SIZE = 4096;
-    private const int SAMPLE_RATE = 44100;
+    private const int BUFFER_SIZE = 1024;
+    private const int SAMPLE_RATE = 22050;
 
     private Synthesizer _synth;
     private MidiFileSequencer _sequencer;
