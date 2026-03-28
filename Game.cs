@@ -1059,7 +1059,7 @@ public class COG_AudioSource : Component
     private uint[] _buffers;
     private const int NUM_BUFFERS = 3;
     private const int BUFFER_SIZE = 1024;
-    private const int SAMPLE_RATE = 22050;
+    private const int SAMPLE_RATE = 11025;
 
     private Synthesizer _synth;
     private MidiFileSequencer _sequencer;
@@ -1136,7 +1136,7 @@ public class COG_AudioSource : Component
         {
             uint bufferId = 0;
             AudioManager.AL.SourceUnqueueBuffers(_sourceId, 1, &bufferId);
-            //FillBuffer(bufferId);
+            FillBuffer(bufferId); // LAGS THE GAME
             AudioManager.AL.SourceQueueBuffers(_sourceId, 1, &bufferId);
             processed--;
         }
