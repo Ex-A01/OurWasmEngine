@@ -90,4 +90,36 @@ function measureFPS(currentTime) {
 }
 // On lance la boucle
 requestAnimationFrame(measureFPS);*/
+
+window.GameAudio = {
+    sounds: {}, // Dictionnaire pour stocker les balises audio en cours
+
+    play: function (id, path, loop, volume) {
+        if (!this.sounds[id]) {
+            this.sounds[id] = new Audio(path);
+        }
+        const audio = this.sounds[id];
+        audio.loop = loop;
+        audio.volume = volume;
+
+        // Les navigateurs bloquent parfois l'audio si le joueur n'a pas encore cliqué
+        audio.play().catch(e => console.warn("[AUDIO] Lecture bloquée par le navigateur (interaction requise) :", e));
+    },
+
+    pause: function (id) {
+        if (this.sounds[id]) this.sounds[id].pause();
+    },
+
+    stop: function (id) {
+        if (this.sounds[id]) {
+            this.sounds[id].pause();
+            this.sounds[id].currentTime = 0; // Remet à zéro
+        }
+    },
+
+    setVolume: function (id, volume) {
+        if (this.sounds[id]) this.sounds[id].volume = volume;
+    }
+};
+
 startApp();

@@ -180,6 +180,18 @@
 
                 <label>Atlas Ligne Y (0, 1, 2...):</label>
                 <input type="number" id="propAtlasY" step="1" min="0">
+
+                <div style="margin-top: 15px; border-top: 1px dashed #555; padding-top: 10px;">
+                    <label style="color: #0098ff; font-weight: bold;">Sélecteur Visuel :</label>
+                    <div style="display: flex; gap: 5px; align-items: center; margin-bottom: 5px;">
+                        <label style="margin:0;">Taille (px):</label>
+                        <input type="number" id="atlasTileSize" value="64" step="1" min="1" style="width: 60px;">
+                    </div>
+                    <div style="background: #222; border: 1px solid #000; overflow: hidden; border-radius: 4px; position: relative;">
+                        <canvas id="atlasCanvas" style="width: 100%; height: auto; cursor: crosshair; display: block;"></canvas>
+                    </div>
+                    <img id="atlasImgSource" src="atlas.png" style="display: none;">
+                </div>
             </div>
 
             <div id="zone-props" class="settings-group" style="display:none;">
@@ -201,14 +213,12 @@
             </div>
 
             <div id="audio-props" class="settings-group" style="display:none; border-left: 3px solid #ff00ff;">
-                <label>Midi Path:</label>
-                <input type="text" id="propMidiPath" value="assets/tracks/track.mid">
-                <label>SoundFont Path:</label>
-                <input type="text" id="propSfPath" value="assets/banks/DS_Square.sf2">
+                <label>Fichier Audio (OGG/MP3/WAV):</label>
+                <input type="text" id="propOggPath" value="assets/tracks/music.ogg">
                 <label>Volume:</label>
                 <input type="number" id="propVolume" step="0.1" min="0" max="1" value="0.5">
                 <label class="checkbox-label">
-                    <input type="checkbox" id="propPlayOnAwake" checked> Play on Awake (Dès le chargement)
+                    <input type="checkbox" id="propPlayOnAwake" checked> Play on Awake
                 </label>
                 <label class="checkbox-label">
                     <input type="checkbox" id="propLoop" checked> Boucle (Loop)
@@ -241,7 +251,7 @@
             'Coin': { label: 'Pièce', color: '#ffcc00', draw: 'circle', hideProps: true, props: { atlasX: 0, atlasY: 2 } },
 
             // NOUVEAUX OUTILS : Événements
-            'AudioSource': { label: 'Source Audio', color: '#ff00ff', draw: 'audio', hasUid: true, isAudio: true, props: { uid: '', midiPath: 'assets/tracks/track.mid', sfPath: 'assets/banks/DS_Square.sf2', playOnAwake: true, volume: 0.5, loop: true } },
+            'AudioSource': { label: 'Source Audio', color: '#ff00ff', draw: 'audio', hasUid: true, isAudio: true, props: { uid: '', oggPath: 'assets/tracks/music.ogg', playOnAwake: true, volume: 0.5, loop: true } },
             'Trigger': { label: 'Trigger Event', color: 'rgba(255, 50, 50, 0.3)', draw: 'zone', isZone: true, isTrigger: true, hasUid: true, props: { zoneW: 100, zoneH: 100, uid: '', targetUid: '', message: 'play', triggerOnce: true } },
 
             'CamZone': { label: 'Zone Caméra', color: 'rgba(255, 255, 0, 0.3)', draw: 'zone', isZone: true, props: { zoneW: 800, zoneH: 600 } },
@@ -308,8 +318,7 @@
             // Gestion de l'affichage selon le type d'outil
             if (tools[currentTool].isAudio) {
                 document.getElementById('audio-props').style.display = 'flex';
-                document.getElementById('propMidiPath').value = defProps.midiPath;
-                document.getElementById('propSfPath').value = defProps.sfPath;
+                document.getElementById('propOggPath').value = defProps.oggPath;
                 document.getElementById('propVolume').value = defProps.volume;
                 document.getElementById('propPlayOnAwake').checked = defProps.playOnAwake;
                 document.getElementById('propLoop').checked = defProps.loop;
@@ -336,6 +345,9 @@
                 document.getElementById('propAtlasX').value = defProps.atlasX;
                 document.getElementById('propAtlasY').value = defProps.atlasY;
             }
+
+            // Rafraîchir le sélecteur d'atlas si la fonction existe
+            if (typeof drawAtlasPicker === 'function') drawAtlasPicker();
         }
 
         // Récupère les propriétés actuelles de l'UI pour le bloc à peindre
@@ -348,8 +360,7 @@
             }
 
             if (tools[currentTool].isAudio) {
-                props.midiPath = document.getElementById('propMidiPath').value;
-                props.sfPath = document.getElementById('propSfPath').value;
+                props.oggPath = document.getElementById('propOggPath').value;
                 props.volume = parseFloat(document.getElementById('propVolume').value) || 0.5;
                 props.playOnAwake = document.getElementById('propPlayOnAwake').checked;
                 props.loop = document.getElementById('propLoop').checked;
@@ -548,8 +559,7 @@
                 else if (obj.type === 'AudioSource') {
                     gameObject.Components.push({
                         "Type": "COG_AudioSource",
-                        "MidiPath": obj.props.midiPath,
-                        "SoundFontPath": obj.props.sfPath,
+                        "OggPath": obj.props.oggPath,
                         "Volume": obj.props.volume,
                         "PlayOnAwake": obj.props.playOnAwake,
                         "Loop": obj.props.loop
@@ -610,6 +620,74 @@
             downloadAnchorNode.click();
             downloadAnchorNode.remove();
         }
+
+        // ==========================================
+        // TEXTURE PICKER (Sélecteur d'Atlas Visuel)
+        // ==========================================
+        const atlasCanvas = document.getElementById('atlasCanvas');
+        const atlasCtx = atlasCanvas.getContext('2d');
+        const atlasImgSource = document.getElementById('atlasImgSource');
+        const atlasTileSizeInput = document.getElementById('atlasTileSize');
+        const inputAtlasX = document.getElementById('propAtlasX');
+        const inputAtlasY = document.getElementById('propAtlasY');
+
+        function drawAtlasPicker() {
+            if (!atlasImgSource.complete || atlasImgSource.naturalWidth === 0) return;
+
+            // Ajuster la vraie résolution du canvas à l'image
+            atlasCanvas.width = atlasImgSource.naturalWidth;
+            atlasCanvas.height = atlasImgSource.naturalHeight;
+
+            atlasCtx.clearRect(0, 0, atlasCanvas.width, atlasCanvas.height);
+            atlasCtx.drawImage(atlasImgSource, 0, 0);
+
+            const tSize = parseInt(atlasTileSizeInput.value) || 64;
+            const selX = parseInt(inputAtlasX.value) || 0;
+            const selY = parseInt(inputAtlasY.value) || 0;
+
+            // 1. Dessiner la grille
+            atlasCtx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            atlasCtx.lineWidth = 1;
+            for (let x = 0; x <= atlasCanvas.width; x += tSize) {
+                atlasCtx.beginPath(); atlasCtx.moveTo(x, 0); atlasCtx.lineTo(x, atlasCanvas.height); atlasCtx.stroke();
+            }
+            for (let y = 0; y <= atlasCanvas.height; y += tSize) {
+                atlasCtx.beginPath(); atlasCtx.moveTo(0, y); atlasCtx.lineTo(atlasCanvas.width, y); atlasCtx.stroke();
+            }
+
+            // 2. Mettre en surbrillance la tile sélectionnée
+            atlasCtx.fillStyle = 'rgba(0, 152, 255, 0.5)';
+            atlasCtx.fillRect(selX * tSize, selY * tSize, tSize, tSize);
+            atlasCtx.strokeStyle = '#0098ff';
+            atlasCtx.lineWidth = 3;
+            atlasCtx.strokeRect(selX * tSize, selY * tSize, tSize, tSize);
+        }
+
+        // Quand l'image est chargée, on dessine
+        atlasImgSource.onload = drawAtlasPicker;
+
+        // Interaction au clic sur le canvas
+        atlasCanvas.addEventListener('mousedown', (e) => {
+            const rect = atlasCanvas.getBoundingClientRect();
+            // Le canvas est redimensionné en CSS (width: 100%), il faut calculer le ratio !
+            const scaleX = atlasCanvas.width / rect.width;
+            const scaleY = atlasCanvas.height / rect.height;
+
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
+            const tSize = parseInt(atlasTileSizeInput.value) || 64;
+
+            inputAtlasX.value = Math.floor(x / tSize);
+            inputAtlasY.value = Math.floor(y / tSize);
+
+            drawAtlasPicker();
+        });
+
+        // Mettre à jour si on change la taille ou si on tape à la main
+        atlasTileSizeInput.addEventListener('input', drawAtlasPicker);
+        inputAtlasX.addEventListener('input', drawAtlasPicker);
+        inputAtlasY.addEventListener('input', drawAtlasPicker);
 
         // Init
         updateBrushPropertiesUI();

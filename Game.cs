@@ -1049,165 +1049,61 @@ public class COG_RopeClimber : Component
 
 public class COG_AudioSource : Component
 {
-    public string SoundFontPath { get; set; } = "assets/banks/DS_Square.sf2";
-    public string MidiPath { get; set; } = "assets/tracks/Never-Gonna-Give-You-Up-3.mid";
+    public string OggPath { get; set; } = "assets/tracks/music.ogg";
     public float Volume { get; set; } = 0.5f;
     public bool Loop { get; set; } = true;
     public bool PlayOnAwake { get; set; } = true;
 
-    private uint _sourceId;
-    private uint[] _buffers;
-    private const int NUM_BUFFERS = 3;
-    private const int BUFFER_SIZE = 1024;
-    private const int SAMPLE_RATE = 11025;
-
-    private Synthesizer _synth;
-    private MidiFileSequencer _sequencer;
-
-    private float[] _leftBuffer;
-    private float[] _rightBuffer;
-    private short[] _interleavedBuffer;
-
-    private bool _isInitialized = false;
+    private string _audioId;
     private bool _isPlaying = false;
+    private bool _isInitialized = false;
 
-    public override void Awake() { }
-
-    private unsafe void InitializeAudio()
+    public override void Awake()
     {
-        _leftBuffer = new float[BUFFER_SIZE];
-        _rightBuffer = new float[BUFFER_SIZE];
-        _interleavedBuffer = new short[BUFFER_SIZE * 2];
-
-        _sourceId = AudioManager.AL.GenSource();
-        AudioManager.AL.SetSourceProperty(_sourceId, SourceFloat.Gain, Volume);
-
-        try
-        {
-            var settings = new SynthesizerSettings(SAMPLE_RATE);
-            _synth = new Synthesizer(SoundFontPath, settings);
-            _sequencer = new MidiFileSequencer(_synth);
-            var midiFile = new MidiFile(MidiPath);
-
-            _sequencer.Play(midiFile, Loop);
-
-            _buffers = new uint[NUM_BUFFERS];
-
-            fixed (uint* ptr = _buffers)
-            {
-                AudioManager.AL.GenBuffers(NUM_BUFFERS, ptr);
-            }
-
-            for (int i = 0; i < NUM_BUFFERS; i++)
-            {
-                uint bufferId = _buffers[i];
-                FillBuffer(bufferId);
-
-                AudioManager.AL.SourceQueueBuffers(_sourceId, 1, &bufferId);
-            }
-
-            _isPlaying = PlayOnAwake;
-            if (_isPlaying)
-            {
-                AudioManager.AL.SourcePlay(_sourceId);
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[AUDIO] Erreur de chargement : {ex.Message}");
-        }
+        // On crée un identifiant unique pour le JavaScript
+        _audioId = "audio_" + GameObject.Uid;
     }
 
-    public override unsafe void Update(float deltaTime)
+    public override void Update(float deltaTime)
     {
         if (!_isInitialized)
         {
-            InitializeAudio();
+            if (PlayOnAwake) Play();
             _isInitialized = true;
         }
+    }
 
-        if (_sequencer == null) return;
+    public void Play()
+    {
+        _isPlaying = true;
+        AudioManager.Play(_audioId, OggPath, Loop, Volume);
+    }
 
-        AudioManager.AL.SetSourceProperty(_sourceId, SourceVector3.Position, Transform.Position.X, Transform.Position.Y, 0f);
+    public void Pause()
+    {
+        _isPlaying = false;
+        AudioManager.Pause(_audioId);
+    }
 
-        AudioManager.AL.GetSourceProperty(_sourceId, GetSourceInteger.BuffersProcessed, out int processed);
-
-        while (processed > 0)
-        {
-            uint bufferId = 0;
-            AudioManager.AL.SourceUnqueueBuffers(_sourceId, 1, &bufferId);
-            FillBuffer(bufferId); // LAGS THE GAME
-            AudioManager.AL.SourceQueueBuffers(_sourceId, 1, &bufferId);
-            processed--;
-        }
-
-        if (_isPlaying)
-        {
-            AudioManager.AL.GetSourceProperty(_sourceId, GetSourceInteger.SourceState, out int state);
-            if ((SourceState)state != SourceState.Playing)
-            {
-                AudioManager.AL.SourcePlay(_sourceId);
-            }
-        }
+    public void Stop()
+    {
+        _isPlaying = false;
+        AudioManager.Stop(_audioId);
     }
 
     public override void ReceiveMessage(string message)
     {
-        if (!_isInitialized)
-        {
-            InitializeAudio();
-            _isInitialized = true;
-        }
-
         switch (message.ToLower())
         {
-            case "play":
-                if (!_isPlaying)
-                {
-                    _isPlaying = true;
-                    AudioManager.AL.SourcePlay(_sourceId);
-                }
-                break;
-            case "pause":
-                _isPlaying = false;
-                AudioManager.AL.SourcePause(_sourceId);
-                break;
-            case "stop":
-                _isPlaying = false;
-                AudioManager.AL.SourceStop(_sourceId);
-                break;
+            case "play": Play(); break;
+            case "pause": Pause(); break;
+            case "stop": Stop(); break;
         }
     }
 
-    private unsafe void FillBuffer(uint bufferId)
+    public void Destroy()
     {
-        _sequencer.Render(_leftBuffer, _rightBuffer);
-
-        for (int i = 0; i < BUFFER_SIZE; i++)
-        {
-            _interleavedBuffer[i * 2] = (short)Math.Clamp(_leftBuffer[i] * 32767f, -32768f, 32767f);
-            _interleavedBuffer[i * 2 + 1] = (short)Math.Clamp(_rightBuffer[i] * 32767f, -32768f, 32767f);
-        }
-
-        fixed (short* ptr = _interleavedBuffer)
-        {
-            int sizeInBytes = BUFFER_SIZE * 2 * sizeof(short);
-            AudioManager.AL.BufferData(bufferId, BufferFormat.Stereo16, ptr, sizeInBytes, SAMPLE_RATE);
-        }
-    }
-
-    public unsafe void Destroy()
-    {
-        AudioManager.AL.SourceStop(_sourceId);
-        AudioManager.AL.DeleteSource(_sourceId);
-
-        if (_buffers != null)
-        {
-            fixed (uint* ptr = _buffers)
-            {
-                AudioManager.AL.DeleteBuffers(NUM_BUFFERS, ptr);
-            }
-        }
+        Stop(); // On coupe le son si l'objet est détruit
     }
 }
 

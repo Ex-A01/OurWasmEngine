@@ -135,11 +135,9 @@ public static class SceneLoader
 
             case "COG_AudioSource":
                 var audio = go.AddComponent<COG_AudioSource>();
-                if (data.TryGetProperty("SoundFontPath", out var sfProp)) audio.SoundFontPath = sfProp.GetString();
-                if (data.TryGetProperty("MidiPath", out var midiProp)) audio.MidiPath = midiProp.GetString();
+                if (data.TryGetProperty("OggPath", out var oggProp)) audio.OggPath = oggProp.GetString();
                 if (data.TryGetProperty("Volume", out var volProp)) audio.Volume = (float)volProp.GetDouble();
                 if (data.TryGetProperty("Loop", out var loopProp)) audio.Loop = loopProp.GetBoolean();
-                // NOUVEAU
                 if (data.TryGetProperty("PlayOnAwake", out var playAwakeProp)) audio.PlayOnAwake = playAwakeProp.GetBoolean();
                 break;
 
