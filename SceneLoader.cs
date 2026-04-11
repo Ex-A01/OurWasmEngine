@@ -5,11 +5,23 @@ using System.Text.Json;
 
 public static class SceneLoader
 {
+    // L'ancienne méthode pour le local (garde-la pour le debug/assets locaux)
     public static Scene LoadSceneFromJson(string filePath, IKeyboard keyboard, IMouse mouse)
     {
         if (!File.Exists(filePath)) throw new FileNotFoundException($"Le fichier {filePath} est introuvable !");
-
         string jsonString = File.ReadAllText(filePath);
+        return ParseSceneJson(jsonString, keyboard, mouse);
+    }
+
+    // NOUVELLE MÉTHODE : Charge directement depuis une string JSON (venant du web)
+    public static Scene LoadSceneFromString(string jsonString, IKeyboard keyboard, IMouse mouse)
+    {
+        return ParseSceneJson(jsonString, keyboard, mouse);
+    }
+
+    // La logique de parsing centralisée
+    private static Scene ParseSceneJson(string jsonString, IKeyboard keyboard, IMouse mouse)
+    {
         using JsonDocument doc = JsonDocument.Parse(jsonString);
         JsonElement root = doc.RootElement;
 
@@ -18,13 +30,13 @@ public static class SceneLoader
 
         Scene scene = new Scene(sceneName, gravity);
 
-        // CRUCIAL : On active la scène MAINTENANT, car quand on va ajouter les COG_Collider
-        // ils vont appeler Awake() et chercher SceneManager.CurrentScene.PhysicsWorld !
+        // On active la scène MAINTENANT
         SceneManager.LoadScene(scene);
 
         JsonElement gameObjects = root.GetProperty("GameObjects");
         foreach (JsonElement goElement in gameObjects.EnumerateArray())
         {
+            // ... (Copie/Colle ici tout le code de l'ancienne boucle foreach) ...
             string goName = goElement.GetProperty("Name").GetString();
             GameObject go = new GameObject(goName);
 
@@ -33,12 +45,10 @@ public static class SceneLoader
                 go.Uid = uidElement.GetString();
             }
 
-            // 1. Gérer le Transform
             JsonElement transform = goElement.GetProperty("Transform");
             go.Transform.Position = new Vector3(transform.GetProperty("X").GetSingle(), transform.GetProperty("Y").GetSingle(), 0);
             go.Transform.Size = new Vector2(transform.GetProperty("W").GetSingle(), transform.GetProperty("H").GetSingle());
 
-            // 2. Gérer les Composants
             if (goElement.TryGetProperty("Components", out JsonElement components))
             {
                 foreach (JsonElement compElement in components.EnumerateArray())

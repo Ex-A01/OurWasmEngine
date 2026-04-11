@@ -78,6 +78,8 @@ public class MyGame : IDisposable
         }
         Console.WriteLine("-----------------------------------------------");*/
 
+        Resize((int)GameConfig.WindowWidth, (int)GameConfig.WindowHeight);
+
         _shader = new Shader(_gl, "assets/base.vert", "assets/base.frag");
 
         // Ajout d'un curseur par défaut (pour l'instant la souris du navigateur)

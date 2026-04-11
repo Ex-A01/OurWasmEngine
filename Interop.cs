@@ -75,4 +75,21 @@ public static partial class Interop
         if (code == "KeyC") CPressed = false;
         if (code == "KeyN") NPressed = false;
     }
+
+    [JSExport]
+    public static void LoadLevelFromWeb(string jsonContent)
+    {
+        Console.WriteLine("[Interop] Demande de chargement d'un niveau depuis le Web reçue !");
+
+        try
+        {
+            // Note: Si tes inputs Silk.NET sont null sur le web, passe null ici aussi
+            SceneLoader.LoadSceneFromString(jsonContent, null, null);
+            Console.WriteLine($"[Interop] Succès ! Scène {SceneManager.CurrentScene.Name} chargée.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Interop] Erreur lors du chargement du niveau distant : {ex.Message}");
+        }
+    }
 }
